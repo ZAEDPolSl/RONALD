@@ -7,8 +7,8 @@ def lungs_segmentation(sitk_image, config=None, binary=True, gpu_id=None):
     if config is not None:
         model = config["model_lungs_segmentation"]
     else:
-        model = mask.get_model('unet', 'R231')
-    lungs = mask.apply(sitk_image, model, batch_size=5, gpu_id=gpu_id)
+        model = mask.get_model('R231')
+    lungs = mask.apply(sitk_image, model, batch_size=5)
     if binary:
         _min = np.min(lungs)
         lungs[lungs > _min] = 1

@@ -1,3 +1,5 @@
+import os
+import pickle
 import itertools
 import numpy as np
 from tqdm import tqdm
@@ -12,7 +14,12 @@ import bronco.external.sknw as sknw
 from bronco.utils_bronchi import dilation_by_slice
 
 
-def skeleton_graph_analysis(sitk_lungs, sitk_gmm_seg, return_binary=True):
+def save_object(obj, filename):
+    with open(filename, 'wb') as outp:  # Overwrites any existing file.
+        pickle.dump(obj, outp, pickle.HIGHEST_PROTOCOL)
+
+
+def skeleton_graph_analysis(sitk_lungs, sitk_gmm_seg, ii=None, return_binary=True, path_save=None):
     lungs = sitk.GetArrayFromImage(sitk_lungs)
     gmm_seg = sitk.GetArrayFromImage(sitk_gmm_seg)
 
@@ -57,6 +64,14 @@ def skeleton_graph_analysis(sitk_lungs, sitk_gmm_seg, return_binary=True):
     _gmm_seg = largest_bronchi_elems'''
 
     skeleton = skeletonize_3d(_gmm_seg)
+
+    if path_save is not None and ii is not None:
+        _sitk_gmm_seg = sitk.Cast(sitk.GetImageFromArray(np.moveaxis(_gmm_seg, 2, 0)), sitk.sitkUInt8)
+        _sitk_gmm_seg.CopyInformation(sitk_lungs)
+        ii.write(_sitk_gmm_seg, os.path.join(path_save, 'bronchovascular_bundle_scaffolding'))
+        _sitk_skeleton = sitk.Cast(sitk.GetImageFromArray(np.moveaxis(skeleton, 2, 0)), sitk.sitkUInt8)
+        _sitk_skeleton.CopyInformation(sitk_lungs)
+        ii.write(_sitk_skeleton, os.path.join(path_save, "skeleton_3d_without_borders"))
 
     no_orthogonal_directions = 2
 
@@ -120,6 +135,14 @@ def skeleton_graph_analysis(sitk_lungs, sitk_gmm_seg, return_binary=True):
     for dominant_direction, edge_node_ids in dominant_direction_branch_dict.items():
         for edge_node_id in edge_node_ids:
             dominant_direction_edge_id_dict[dominant_direction].append(edge_ids_dict[edge_node_id])
+
+    if path_save is not None and ii is not None:
+        save_object(edge_ids_dict, f'{str(path_save)}/edge_ids_dict.pck')
+        save_object(dominant_direction_branch_dict, f'{str(path_save)}/dominant_direction_branch_dict.pck')
+        _sitk_skeleton = sitk.Cast(sitk.GetImageFromArray(np.moveaxis(skeleton_labelled, 2, 0)), sitk.sitkInt16)
+        _sitk_skeleton.CopyInformation(sitk_lungs)
+        ii.write(_sitk_skeleton, f'{str(path_save)}/skeleton_labelled')
+        save_object(dominant_direction_edge_id_dict, f'{str(path_save)}/dominant_direction_edge_id_dict.pck')
 
     number_set = [-1, 0, 1]
     combs = list(itertools.product(number_set, repeat=2))
@@ -191,5 +214,8 @@ def skeleton_graph_analysis(sitk_lungs, sitk_gmm_seg, return_binary=True):
 
             direction = main_direction
             branch_id_to_direction_dict[branch_id] = direction
+
+    if path_save is not None and ii is not None:
+        save_object(branch_id_to_direction_dict, f'{str(path_save)}/branch_id_to_direction_dict.pck')
 
     return sitk_mask_labelled

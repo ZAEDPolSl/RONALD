@@ -280,9 +280,12 @@ class ImageInstance:
             os.makedirs(_output_path, exist_ok=True)
         else:
             _output_path = output_path
+        if not _output_path.endswith('.nrrd'):
+            _output_path = _output_path + ".nrrd"
         # get information
-        image_original = self.image_reader.Execute()
-        image_original.CopyInformation(image)
+        if self.image_reader is not None:
+            image_original = self.image_reader.Execute()
+            image.CopyInformation(image_original)
         # save image
         _output_path = os.path.join(_output_path)
         sitk.WriteImage(image, _output_path)
