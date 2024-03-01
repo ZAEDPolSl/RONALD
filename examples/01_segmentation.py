@@ -1,4 +1,4 @@
-from bronco.bronchovascular_bundle_segmentation import bronchovascular_bundle_segmentation
+from bronco.segmentation.bronchovascular_bundle_segmentation import bronchovascular_bundle_segmentation
 
 
 if __name__ == "__main__":

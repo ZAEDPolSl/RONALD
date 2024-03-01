@@ -1,7 +1,7 @@
 import os
 from bronco.io_local.ImageInstance import ImageInstance
-from bronco.lungs_segmentation import lungs_segmentation
-from bronco.bronchovascular_bundle_segmentation import bronchovascular_bundle_segmentation
+from bronco.segmentation.lungs_segmentation import lungs_segmentation
+from bronco.segmentation.bronchovascular_bundle_segmentation import bronchovascular_bundle_segmentation
 
 
 def pipeline(path_series, path_save=None, **kwargs):
@@ -10,7 +10,7 @@ def pipeline(path_series, path_save=None, **kwargs):
 
         Parameters
         ----------
-        path_image : (str) path to the folder with DICOM series or the NRRD file,
+        path_series : (str) path to the folder with DICOM series or the NRRD file,
         path_save : (str) path to the folder where results are going to be stored,
         kwargs :
             - retain_main_bronchi : (bool) default True, whether to retain main broncho - time consuming operation,

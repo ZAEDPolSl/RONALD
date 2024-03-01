@@ -19,7 +19,7 @@ def save_object(obj, filename):
         pickle.dump(obj, outp, pickle.HIGHEST_PROTOCOL)
 
 
-def skeleton_graph_analysis(sitk_lungs, sitk_gmm_seg, ii=None, return_binary=True, path_save=None):
+def vessels_rough_segmentation(sitk_lungs, sitk_gmm_seg, ii=None, return_binary=True, path_save=None):
     lungs = sitk.GetArrayFromImage(sitk_lungs)
     gmm_seg = sitk.GetArrayFromImage(sitk_gmm_seg)
 

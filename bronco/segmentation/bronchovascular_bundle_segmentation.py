@@ -1,9 +1,9 @@
 import os
 import SimpleITK as sitk
-from .io_local.ImageInstance import ImageInstance
+from bronco.io_local.ImageInstance import ImageInstance
 from bronco.preprocessing import preprocess_lungs
 from bronco.preprocessing import run_thresholding
-from bronco.preprocessing import skeleton_graph_analysis
+from bronco.preprocessing import vessels_rough_segmentation
 
 
 def bronchovascular_bundle_segmentation(path_image, path_lungs, path_save=None, **kwargs):
@@ -23,7 +23,7 @@ def bronchovascular_bundle_segmentation(path_image, path_lungs, path_save=None, 
 
     Returns
     -------
-    sitk_bronchovascular_bundle : (sitk.Image) image of the bronchovascular bundle,
+    sitk_vessels : (sitk.Image) image of the bronchovascular bundle,
     sitk_thresholds : (sitk.Image) image of the raw (before the hierarchical clustering) bronchovascular bundle
     """
     print("Reading the data...")
@@ -47,17 +47,13 @@ def bronchovascular_bundle_segmentation(path_image, path_lungs, path_save=None, 
     sitk_lungs, sitk_labelled_bronchi, sitk_mediastinum = preprocess_lungs(sitk_image, sitk_lungs,
                                                                            kwargs.get('retain_main_bronchi', True))
 
-    # TODO: DEBUG saving
-    # path_save = r"D:\msocha\PHD\2023-09-02 - testing airways segmentation\1"
-    # ii.write(sitk.Cast(sitk_lungs, sitk.sitkUInt8), os.path.join(path_save, 'lungs'))
-    # ii.write(sitk.Cast(sitk_labelled_bronchi, sitk.sitkUInt8), os.path.join(path_save, 'trachea'))
-    # ii.write(sitk.Cast(sitk_mediastinum, sitk.sitkUInt8), os.path.join(path_save, 'mediastinum'))
-    if sitk_labelled_bronchi is not None:
-        pass
-        # sitk_airways = get_airways(sitk_lungs, sitk_labelled_bronchi)
-
     # run thresholding using gmm
-    sitk_thresholds = run_thresholding(sitk_image, sitk_lungs, number_of_gmms=3)
+    sitk_thresholds, thresholds = run_thresholding(sitk_image, sitk_lungs, number_of_gmms=3, return_thresholds=True)
+
+    # get body mask
+    sitk_lungs_convex_hull = convex_hull_3d(sitk_lungs)
+    sitk_body = sitk.Mask(sitk_image, sitk_lungs_convex_hull, outsideValue=8000)
+    body = sitk.GetArrayFromImage(sitk_body)
 
     # get main airways mask
     threshold = sitk.GetArrayFromImage(sitk_thresholds)
@@ -77,20 +73,20 @@ def bronchovascular_bundle_segmentation(path_image, path_lungs, path_save=None, 
         _path_save = path_save
     else:
         _path_save = None
-    sitk_bronchovascular_bundle = skeleton_graph_analysis(sitk_lungs_image, sitk_thresholds, ii=ii,
-                                                          return_binary=kwargs.get('return_binary', True),
-                                                          path_save=_path_save)
-    sitk_bronchovascular_bundle.CopyInformation(sitk_image)
+    sitk_vessels = vessels_rough_segmentation(sitk_lungs_image, sitk_thresholds, ii=ii,
+                                              return_binary=kwargs.get('return_binary', True),
+                                              path_save=_path_save)
+    sitk_vessels.CopyInformation(sitk_image)
 
     # save results
     if path_save is not None and type(path_image) is str:
         print("Saving the results...")
         _path_save = os.path.join(path_save, 'bronchovascular_bundle')
         os.makedirs(_path_save, exist_ok=True)
-        ii.write(sitk_bronchovascular_bundle, _path_save, description='Bronchovascular bundle')
+        ii.write(sitk_vessels, _path_save, description='Bronchovascular bundle')
 
         _path_save = os.path.join(path_save, 'raw_bronchovascular_bundle')
         os.makedirs(_path_save, exist_ok=True)
         ii.write(sitk_thresholds, _path_save, description='Raw Bronchovascular bundle - after GMM only')
 
-    return sitk_bronchovascular_bundle, sitk_thresholds
+    return sitk_vessels, sitk_thresholds
