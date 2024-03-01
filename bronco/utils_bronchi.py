@@ -100,6 +100,20 @@ def opening_by_slice(sitk_image, kernel_radius=1):
 
 
 @slicing_decorator
+def closing_by_slice(sitk_image, kernel_radius=1, kernel_type=sitk.sitkBox):
+    min_f = sitk.MinimumMaximumImageFilter()
+    min_f.Execute(sitk_image)
+    min_val = min_f.GetMinimum()
+
+    sitk_mask = sitk_image > min_val
+    opening_filter = sitk.BinaryMorphologicalOpeningImageFilter()
+    opening_filter.SetKernelType(kernel_type)
+    opening_filter.SetKernelRadius(kernel_radius)
+    sitk_mask_opened = opening_filter.Execute(sitk_mask)
+    return sitk_mask_opened
+
+
+@slicing_decorator
 def opening_reconstruction_by_slice(sitk_image, kernel_radius=1):
     min_f = sitk.MinimumMaximumImageFilter()
     min_f.Execute(sitk_image)

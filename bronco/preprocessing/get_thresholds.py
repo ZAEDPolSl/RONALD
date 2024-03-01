@@ -55,7 +55,7 @@ def create_thresholded_volumes(thresholds, image_seg_volume):
     return image_thresholded
 
 
-def run_thresholding(sitk_image, sitk_mask=None, path_cache=None, number_of_gmms=3):
+def run_thresholding(sitk_image, sitk_mask=None, path_cache=None, number_of_gmms=3, return_thresholds=False):
     # segment the lung area
     if sitk_mask is not None:
         # get min
@@ -109,4 +109,7 @@ def run_thresholding(sitk_image, sitk_mask=None, path_cache=None, number_of_gmms
     # segments = np.swapaxes(segments, 0, 2)
     sitk_segments = sitk.GetImageFromArray(segments)
     sitk_segments.CopyInformation(sitk_image)
-    return sitk_segments
+    if return_thresholds:
+        return sitk_segments, thresholds
+    else:
+        return sitk_segments
