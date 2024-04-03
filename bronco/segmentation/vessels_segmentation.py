@@ -6,12 +6,16 @@ from tqdm import tqdm
 import SimpleITK as sitk
 from collections import defaultdict
 
+from skimage.filters import sato
 from skimage.measure import label
 from skimage.morphology import skeletonize_3d
 from sklearn.metrics.pairwise import cosine_similarity
 
 import bronco.external.sknw as sknw
-from bronco.utils_bronchi import dilation_by_slice
+from bronco.preprocessing import preprocess_lungs
+from bronco.preprocessing import run_thresholding
+from bronco.io_local.ImageInstance import ImageInstance
+from bronco.utils import plot_sum_image, plot_sum_subplots_image
 
 
 def save_object(obj, filename):
@@ -19,18 +23,35 @@ def save_object(obj, filename):
         pickle.dump(obj, outp, pickle.HIGHEST_PROTOCOL)
 
 
-def vessels_rough_segmentation(sitk_lungs, sitk_gmm_seg, ii=None, return_binary=True, path_save=None):
+def vessels_rough_segmentation(sitk_lungs, sitk_gmm_seg, ii=None, return_binary=True, path_save=None,
+                               path_visualisations=None, stuid=None):
+
     lungs = sitk.GetArrayFromImage(sitk_lungs)
     gmm_seg = sitk.GetArrayFromImage(sitk_gmm_seg)
-
-    lungs = np.moveaxis(lungs, 0, 2)
-    gmm_seg = np.moveaxis(gmm_seg, 0, 2)
 
     _gmm_seg = gmm_seg.copy()
     _lungs = lungs.copy()
 
     _lungs[_lungs != _lungs.min()] = 1
     _lungs[_lungs == _lungs.min()] = 0
+
+    # remove upper and lower near lung border artefacts
+    _sitk_lungs = sitk.GetImageFromArray(_lungs)
+    _sitk_lungs.CopyInformation(sitk_lungs)
+    sitk_lung_border = _sitk_lungs - sitk.BinaryErode(_sitk_lungs, kernelRadius=(6, 6, 6))
+    lung_border = sitk.GetArrayFromImage(sitk_lung_border)
+    exist_indexes = np.argwhere(np.sum(np.sum(lung_border, axis=-1), axis=-1) > 0).flatten()
+    len_indexes = len(exist_indexes)
+    lower, upper = exist_indexes[int(0.05 * len_indexes)], exist_indexes[int(0.95 * len_indexes)]
+    lung_border[lower:upper, :, :] = 0
+
+    lung_border = np.moveaxis(lung_border, 0, 2)
+    _lungs = np.moveaxis(_lungs, 0, 2)
+    _gmm_seg = np.moveaxis(_gmm_seg, 0, 2)
+
+    # modify content
+    _lungs = _lungs - lung_border
+    _gmm_seg = _gmm_seg * _lungs
 
     _lungs = _lungs.astype(np.uint8)
 
@@ -45,8 +66,14 @@ def vessels_rough_segmentation(sitk_lungs, sitk_gmm_seg, ii=None, return_binary=
 
     # Get two largest volumes - left bronchi and right bronchi
     id_bronchi_1, id_bronchi_2 = labels[-1][0], labels[-2][0]
-    id_bronchi_3, id_bronchi_4 = labels[-3][0], labels[-4][0]
-    id_bronchi_5, id_bronchi_6 = labels[-5][0], labels[-6][0]
+    if len(labels) > 3:
+        id_bronchi_3, id_bronchi_4 = labels[-3][0], labels[-4][0]
+    else:
+        id_bronchi_3, id_bronchi_4 = id_bronchi_1, id_bronchi_2
+    if len(labels) > 5:
+        id_bronchi_5, id_bronchi_6 = labels[-5][0], labels[-6][0]
+    else:
+        id_bronchi_5, id_bronchi_6 = id_bronchi_1, id_bronchi_2
 
     _gmm_seg[(labelled_volume != id_bronchi_1) & (labelled_volume != id_bronchi_2) &
              (labelled_volume != id_bronchi_3) & (labelled_volume != id_bronchi_4) &
@@ -62,16 +89,45 @@ def vessels_rough_segmentation(sitk_lungs, sitk_gmm_seg, ii=None, return_binary=
             largest_bronchi_elems[labelled_volume == l[0]] = 1
             number_of_elems += 1
     _gmm_seg = largest_bronchi_elems'''
+    image_sato = sato(_gmm_seg.copy(), [2, 3, 5], black_ridges=False)
+    image_sato = ((image_sato - image_sato.min()) / (image_sato.max() - image_sato.min()))
+    image_sato = np.where(image_sato > 0.025, 1, 0) * _gmm_seg.copy()
+    # image_sato = np.where(image_sato > 0, 1, 0).sum(axis=0)
+    # _gmm_seg = _gmm_seg * image_sato
 
-    skeleton = skeletonize_3d(_gmm_seg)
+    # TODO DEBUG
+    # testing sato filtering
+    '''aaaa = sato(_gmm_seg.copy(), [2, 3, 5], black_ridges=False)
+    aaaa = ((aaaa - aaaa.min()) / (aaaa.max() - aaaa.min()))
+    aaaa_thresholds = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.65, 0.7, 0.8]
+    list_imagesss = []
+    for thr in aaaa_thresholds:
+        imm = np.where(aaaa > thr, 1, 0) * _gmm_seg.copy()
+        imm = np.where(imm > 0, 1, 0).sum(axis=0)
+        imm = np.rot90(imm)
+        list_imagesss.append(imm)
+    imm = _gmm_seg.copy()
+    imm = np.where(imm > 0, 1, 0).sum(axis=0)
+    imm = np.rot90(imm)
+    list_imagesss.insert(0, imm)
+    aaaa_thresholds.insert(0, -1)
+    plot_sum_subplots_image(list_imagesss, x_titles=aaaa_thresholds, path_save=path_visualisations,
+                            category='sato_subplots', name=stuid)'''
+
+    ##
+    ##
+    skeleton = skeletonize_3d(_gmm_seg) * image_sato
 
     if path_save is not None and ii is not None:
         _sitk_gmm_seg = sitk.Cast(sitk.GetImageFromArray(np.moveaxis(_gmm_seg, 2, 0)), sitk.sitkUInt8)
         _sitk_gmm_seg.CopyInformation(sitk_lungs)
-        ii.write(_sitk_gmm_seg, os.path.join(path_save, 'bronchovascular_bundle_scaffolding'))
+        ii.write(_sitk_gmm_seg, os.path.join(path_save, 'vessels_scaffolding.nrrd'), forced_mode='file')
+        _sitk_gmm_seg = sitk.Cast(sitk.GetImageFromArray(np.moveaxis(_gmm_seg * image_sato, 2, 0)), sitk.sitkUInt8)
+        _sitk_gmm_seg.CopyInformation(sitk_lungs)
+        ii.write(_sitk_gmm_seg, os.path.join(path_save, 'vessels_sato_scaffolding.nrrd'), forced_mode='file')
         _sitk_skeleton = sitk.Cast(sitk.GetImageFromArray(np.moveaxis(skeleton, 2, 0)), sitk.sitkUInt8)
         _sitk_skeleton.CopyInformation(sitk_lungs)
-        ii.write(_sitk_skeleton, os.path.join(path_save, "skeleton_3d_without_borders"))
+        ii.write(_sitk_skeleton, os.path.join(path_save, "vessels_skeleton.nrrd"), forced_mode='file')
 
     no_orthogonal_directions = 2
 
@@ -83,7 +139,7 @@ def vessels_rough_segmentation(sitk_lungs, sitk_gmm_seg, ii=None, return_binary=
     nodes_unpacked = list(graph.nodes())
 
     def normalize_vec(v):
-        return v / np.sqrt(np.sum(v ** 2))
+        return v / np.sqrt(np.sum(v ** 2) + 1e-10)
 
     base_directions = np.array([
         [1, 0, 0],
@@ -219,3 +275,100 @@ def vessels_rough_segmentation(sitk_lungs, sitk_gmm_seg, ii=None, return_binary=
         save_object(branch_id_to_direction_dict, f'{str(path_save)}/branch_id_to_direction_dict.pck')
 
     return sitk_mask_labelled
+
+
+def vessels_segmentation(path_image, path_lungs, path_thresholds=None, path_save=None, path_visualisations=None,
+                         stuid=None, **kwargs):
+    """
+    Bronchovascular bundle segmentation function.
+    
+    Parameters
+    ----------
+    path_image : (str) path to the folder with DICOM series or the NRRD file,
+    path_lungs : (str) path to the folder with DICOM series or the NRRD file,
+    path_thresholds : (str) path to the folder with DICOM series or the NRRD file,
+    path_save : (str) path to the folder where results are going to be stored,
+    kwargs :
+        - retain_main_bronchi : (bool) default True, whether to retain main broncho - time consuming operation,
+        - return_binary : (bool) default True, whether to return binary or hierarchically labelled mask,
+        - save_all: (bool) default False, whether to save all intermediate series - gmm results, skeleton etc.
+        - ii: (ImageInstance) default None, ImageInstance is a class object responsible for saving the results.
+
+    Returns
+    -------
+    sitk_vessels : (sitk.Image) image of the bronchovascular bundle,
+    sitk_thresholds : (sitk.Image) image of the raw (before the hierarchical clustering) bronchovascular bundle
+    """
+    print("Reading the data...")
+    if type(path_image) is str:
+        ii = ImageInstance()
+        sitk_image = ii.read(path_image)
+    elif type(path_image) is sitk.Image:
+        ii = kwargs.get('ii', None)
+        sitk_image = path_image
+    else:
+        raise TypeError(f"Wrong dtype of path_image variable: {type(path_image)}, should be str or sitk.Image")
+
+    if type(path_lungs) is str:
+        sitk_lungs = ImageInstance().read(path_lungs)
+    elif type(path_lungs) is sitk.Image:
+        sitk_lungs = path_lungs
+    else:
+        raise TypeError(f"Wrong dtype of path_lungs variable: {type(path_lungs)}, should be str or sitk.Image")
+
+    # preprocess lungs
+    sitk_lungs, sitk_labelled_bronchi, sitk_mediastinum = preprocess_lungs(sitk_image, sitk_lungs,
+                                                                           kwargs.get('retain_main_bronchi', True))
+
+    # run thresholding using gmm
+    if path_thresholds is None:
+        sitk_thresholds, thresholds = run_thresholding(sitk_image, sitk_lungs, number_of_gmms=3, return_thresholds=True)
+    else:
+        if type(path_thresholds) is str:
+            sitk_thresholds = ImageInstance().read(path_thresholds)
+        elif type(path_thresholds) is sitk.Image:
+            sitk_thresholds = path_thresholds
+        else:
+            raise TypeError(f"Wrong dtype of path_image variable: {type(path_image)}, should be str or sitk.Image")
+
+    # get body mask
+    # sitk_lungs_convex_hull = convex_hull_3d(sitk_lungs)
+    # sitk_body = sitk.Mask(sitk_image, sitk_lungs_convex_hull, outsideValue=8000)
+    # body = sitk.GetArrayFromImage(sitk_body)
+
+    # get main airways mask
+    threshold = sitk.GetArrayFromImage(sitk_thresholds)
+    threshold[threshold != 3] = 0
+    threshold[threshold == 3] = 1
+    sitk_thresholds = sitk.GetImageFromArray(threshold)
+    sitk_thresholds.CopyInformation(sitk_image)
+
+    # get lungs image
+    stats = sitk.StatisticsImageFilter()
+    stats.Execute(sitk_image)
+    _min = stats.GetMinimum()
+    sitk_lungs_image = sitk.Mask(sitk_image, sitk_lungs, outsideValue=_min - 1)
+
+    # skeletonize and graph analysis
+    if kwargs.get('save_all', False):
+        _path_save = path_save
+    else:
+        _path_save = None
+    sitk_vessels = vessels_rough_segmentation(sitk_lungs_image, sitk_thresholds, ii=ii,
+                                              return_binary=kwargs.get('return_binary', True),
+                                              path_save=_path_save, path_visualisations=path_visualisations,
+                                              stuid=stuid)
+    sitk_vessels.CopyInformation(sitk_image)
+
+    # save results
+    if path_save is not None and type(path_image) is str:
+        print("Saving the results...")
+        _path_save = os.path.join(path_save, 'bronchovascular_bundle')
+        os.makedirs(_path_save, exist_ok=True)
+        ii.write(sitk_vessels, _path_save, description='Bronchovascular bundle')
+
+        _path_save = os.path.join(path_save, 'raw_bronchovascular_bundle')
+        os.makedirs(_path_save, exist_ok=True)
+        ii.write(sitk_thresholds, _path_save, description='Raw Bronchovascular bundle - after GMM only')
+
+    return sitk_vessels, sitk_thresholds

@@ -160,6 +160,7 @@ class ImageInstance:
                                                      unique_patient_id, facility)
         else:
             _output_path = output_path
+        os.makedirs(_output_path, exist_ok=True)
         # initialize reader
         writer = sitk.ImageFileWriter()
         writer.KeepOriginalImageUIDOn()

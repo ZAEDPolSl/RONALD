@@ -3,7 +3,7 @@ from time import time
 import SimpleITK as sitk
 from skimage.measure import label
 from skimage.morphology import convex_hull_image
-from bronco.utils_bronchi import erosion_by_slice
+from bronco.utils import erosion_by_slice
 
 
 def mediastinum_segmentation(sitk_segmentation, sitk_image=None):

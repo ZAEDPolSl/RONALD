@@ -1,8 +1,10 @@
+import os
 import cv2
 import pickle
 import numpy as np
 import SimpleITK as sitk
 from functools import wraps
+import matplotlib.pyplot as plt
 
 
 def remove_borders(input_img, kernel_size=(5, 5), iterations=2):
@@ -127,7 +129,6 @@ def opening_reconstruction_by_slice(sitk_image, kernel_radius=1):
     return sitk_mask_opened
 
 
-
 def save_object(obj, filename):
     with open(filename, 'wb') as outp:  # Overwrites any existing file.
         pickle.dump(obj, outp, pickle.HIGHEST_PROTOCOL)
@@ -164,3 +165,89 @@ def solve(m1, m2, std1, std2):
         - np.log(std2 / std1)
     )
     return np.roots([a, b, c])
+
+
+def display(text, verbose):
+    if verbose > 0:
+        print(text)
+
+
+def get_image2roi(image, mask):
+    non_zero_indices = np.argwhere(mask > 0)
+    if len(non_zero_indices) > 0:
+        min_coords = non_zero_indices.min(axis=0)
+        max_coords = non_zero_indices.max(axis=0)
+    else:
+        return image
+
+    roi = image[min_coords[0]:max_coords[0] + 1,
+                min_coords[1]:max_coords[1] + 1]
+    return roi
+
+
+def plot_sum_image(sitk_image, path_save=None, category=None, name=None):
+    if type(sitk_image) is sitk.Image:
+        im = sitk.GetArrayFromImage(sitk_image)
+    else:
+        im = sitk_image
+    im_sum = np.where(im > 0, 1, 0).sum(axis=1)
+    im_sum = np.rot90(np.rot90(im_sum))
+    im_sum = get_image2roi(im_sum, np.where(im_sum > 0, 1, 0))
+    fig = plt.figure(figsize=(10, 10))
+    plt.imshow(im_sum, cmap='gray')
+    plt.xticks([])
+    plt.yticks([])
+    if category is not None:
+        plt.title(category, fontsize=23)
+    if path_save is not None and name is not None:
+        if category is None:
+            path_save_fig = os.path.join(path_save, f"{name}.png")
+        else:
+            path_save_fig = os.path.join(path_save, category)
+            os.makedirs(path_save_fig, exist_ok=True)
+            path_save_fig = os.path.join(path_save_fig, f"{name}.png")
+        fig.savefig(path_save_fig)
+    else:
+        plt.show()
+    plt.close(fig)
+
+
+def plot_sum_subplots_image(images, path_save=None, x_titles=None, y_titles=None, category=None, name=None, axis=None,
+                            cmap='gray'):
+    n = len(images)
+    num_rows = int(np.ceil(n / 5))
+    num_cols = int(min(n, 5))
+    fig, axes = plt.subplots(num_rows, num_cols, figsize=(8 * num_cols, 8 * num_rows))
+    axes = axes.flatten()
+    # fig, axes = plt.subplots(1, len(images), figsize=(len(images) * 8, 10))
+    for enum, im_sum in enumerate(images):
+        if axis is not None:
+            im_sum = np.where(im_sum > 0, 1, 0).sum(axis=axis)
+            if axis == 1:
+                im_sum = np.rot90(np.rot90(im_sum))
+            else:
+                im_sum = np.rot90(im_sum)
+        im_sum = get_image2roi(im_sum, np.where(im_sum > 0, 1, 0))
+        if cmap is not None:
+            axes[enum].imshow(im_sum, cmap='gray')
+        else:
+            axes[enum].imshow(im_sum)
+        axes[enum].set_xticks([])
+        axes[enum].set_yticks([])
+        if x_titles is not None:
+            axes[enum].set_title(str(x_titles[enum]), fontsize=23)
+        if y_titles is not None:
+            if not enum % 5:
+                axes.set_ylabel(str(y_titles[enum // 5]))
+    plt.tight_layout()
+    if path_save is not None and name is not None:
+        if category is None:
+            path_save_fig = os.path.join(path_save, f"{name}.png")
+        else:
+            path_save_fig = os.path.join(path_save, category)
+            os.makedirs(path_save_fig, exist_ok=True)
+            path_save_fig = os.path.join(path_save_fig, f"{name}.png")
+        fig.savefig(path_save_fig)
+    else:
+        plt.show()
+    plt.close(fig)
