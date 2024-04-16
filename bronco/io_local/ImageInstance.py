@@ -74,6 +74,10 @@ class ImageInstance:
             input_image = self.image_reader.Execute()
         return input_image
 
+    def copy_information(self, sitk_image):
+        sitk_ref = self.image_reader.Execute()
+        sitk_image.CopyInformation(sitk_ref)
+
     def get_series_instance_uid(self):
         return self.image_reader.GetMetaData(0, "0020|000e")
 

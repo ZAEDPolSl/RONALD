@@ -15,7 +15,7 @@ from bronco.preprocessing.connected_components import convex_hull_3d, find_large
     find_most_similar_connected_component
 from bronco.utils import plot_sum_image, plot_sum_subplots_image
 
-from priv.image_viewer import image_viewer
+# from priv.image_viewer import image_viewer
 
 path_temp = r"D:\msocha\PHD\2024-03-27 - test terminal bronchi filling\Abramik_Miroslaw"
 
@@ -238,9 +238,9 @@ def airways_segmentation(sitk_image, sitk_lungs, thresholds=None, path_visualisa
     # level set segmentation
     display("Fast marching airways segmentation...", verbose)
     image_level_set = fast_marching(sitk_speed_image, seed_point=list_points, stopping_value=10)
-    image_level_set_20 = np.where(fast_marching(sitk_speed_image, seed_point=list_points, stopping_value=20) > 0, 1, 0)
-    image_level_set_30 = np.where(fast_marching(sitk_speed_image, seed_point=list_points, stopping_value=30) > 0, 1, 0)
-    image_level_set_40 = np.where(fast_marching(sitk_speed_image, seed_point=list_points, stopping_value=40) > 0, 1, 0)
+    # image_level_set_20 = np.where(fast_marching(sitk_speed_image, seed_point=list_points, stopping_value=20) > 0, 1, 0)
+    # image_level_set_30 = np.where(fast_marching(sitk_speed_image, seed_point=list_points, stopping_value=30) > 0, 1, 0)
+    # image_level_set_40 = np.where(fast_marching(sitk_speed_image, seed_point=list_points, stopping_value=40) > 0, 1, 0)
     sitk_airways = sitk.GetImageFromArray(image_level_set)
     sitk_airways.CopyInformation(sitk_image)
     sitk_airways = sitk.Cast(sitk_airways > 0, sitk.sitkInt16)
