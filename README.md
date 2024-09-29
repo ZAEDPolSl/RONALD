@@ -1,12 +1,28 @@
 # BRONCO
-Bronchovascular bundle modeling implemented in python. Tested with python 3.8.
+This repository contains a Python 3.8 implementation of an airways segmentation algorithm for CT thorax images. 
+The algorithm utilizes the Fast Marching method, guided by two velocity maps: one based on image gradient and 
+the other on vesselness filtering. This combination enhances the accuracy and reliability of airway segmentation,
+making it suitable for medical imaging and research purposes.
+Features:
+
+- Segments airways from thoracic CT scans.
+- Uses Fast Marching algorithm for region growing.
+- Two velocity maps (gradient-based and vesselness) to guide segmentation.
+- Written in Python 3.8 for easy integration and flexibility.
+
+**Example output:**
+![Image](/data/readme/airways_subplots.png)
+
+Feel free to contribute or use this algorithm for research and development. Algorithm works best for low-dose CT.
 
 # Installation
 Run command:
 
 ``pip install -r requirements.txt``
 
+The `lungmask` package is there for the lungs segmentation task, please refer to the
+[original github](https://github.com/JoHof/lungmask) repository for citation.
 # Usage
 
-Example usage can be found in examples/01_segmentation.py, note that depending on your IDE configuration the paths 
-strings may not work.
+Example usage can be found in `examples/01_segmentation.py`, note that depending on your IDE configuration supplied
+in the example path strings may not be correct, adjust for personal usage.
