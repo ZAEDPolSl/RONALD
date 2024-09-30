@@ -1,24 +1,33 @@
-import cv2
-import pickle
 import numpy as np
 import SimpleITK as sitk
 from functools import wraps
 
 
-def remove_borders(input_img, kernel_size=(5, 5), iterations=2):
-    img = input_img.copy()
-    kernel = np.ones(kernel_size, np.uint8)
-    img_erosion = cv2.erode(img, kernel, iterations=iterations)
-    return img_erosion
+def sitk_resample(itk_image, out_spacing=(2.0, 2.0, 2.0), is_label=False):
+    """Source: https://gist.github.com/mrajchl/ccbd5ed12eb68e0c1afc5da116af614a"""
+    # Resample images to 2mm spacing with SimpleITK
+    original_spacing = itk_image.GetSpacing()
+    original_size = itk_image.GetSize()
 
+    out_size = [
+        int(np.round(original_size[0] * (original_spacing[0] / out_spacing[0]))),
+        int(np.round(original_size[1] * (original_spacing[1] / out_spacing[1]))),
+        int(np.round(original_size[2] * (original_spacing[2] / out_spacing[2])))]
 
-def remove_borders_from_lungs(input_img, kernel_size=(5, 5), iterations=2):
-    img = input_img.copy()
+    resample = sitk.ResampleImageFilter()
+    resample.SetOutputSpacing(out_spacing)
+    resample.SetSize(out_size)
+    resample.SetOutputDirection(itk_image.GetDirection())
+    resample.SetOutputOrigin(itk_image.GetOrigin())
+    resample.SetTransform(sitk.Transform())
+    resample.SetDefaultPixelValue(itk_image.GetPixelIDValue())
 
-    for i in range(img.shape[0]):
-        img[i] = remove_borders(img[i], kernel_size=kernel_size, iterations=iterations)
+    if is_label:
+        resample.SetInterpolator(sitk.sitkNearestNeighbor)
+    else:
+        resample.SetInterpolator(sitk.sitkBSpline)
 
-    return img
+    return resample.Execute(itk_image)
 
 
 def slicing_decorator(func):
@@ -72,6 +81,20 @@ def erosion_by_slice(sitk_image, kernel_radius=1):
 
 
 @slicing_decorator
+def fill_holes_by_slice(sitk_image):
+    min_f = sitk.MinimumMaximumImageFilter()
+    min_f.Execute(sitk_image)
+    min_val = min_f.GetMinimum()
+
+    sitk_mask = sitk_image > min_val
+    erode_filter = sitk.BinaryFillholeImageFilter()
+    # erode_filter.SetKernelType(sitk.sitkBox)
+    # erode_filter.SetKernelRadius(kernel_radius)
+    sitk_mask_eroded = erode_filter.Execute(sitk_mask)
+    return sitk_mask_eroded
+
+
+@slicing_decorator
 def dilation_by_slice(sitk_image, kernel_radius=1):
     min_f = sitk.MinimumMaximumImageFilter()
     min_f.Execute(sitk_image)
@@ -100,20 +123,6 @@ def opening_by_slice(sitk_image, kernel_radius=1):
 
 
 @slicing_decorator
-def closing_by_slice(sitk_image, kernel_radius=1, kernel_type=sitk.sitkBox):
-    min_f = sitk.MinimumMaximumImageFilter()
-    min_f.Execute(sitk_image)
-    min_val = min_f.GetMinimum()
-
-    sitk_mask = sitk_image > min_val
-    opening_filter = sitk.BinaryMorphologicalOpeningImageFilter()
-    opening_filter.SetKernelType(kernel_type)
-    opening_filter.SetKernelRadius(kernel_radius)
-    sitk_mask_opened = opening_filter.Execute(sitk_mask)
-    return sitk_mask_opened
-
-
-@slicing_decorator
 def opening_reconstruction_by_slice(sitk_image, kernel_radius=1):
     min_f = sitk.MinimumMaximumImageFilter()
     min_f.Execute(sitk_image)
@@ -125,42 +134,3 @@ def opening_reconstruction_by_slice(sitk_image, kernel_radius=1):
     opening_filter.SetKernelRadius(kernel_radius)
     sitk_mask_opened = opening_filter.Execute(sitk_mask)
     return sitk_mask_opened
-
-
-
-def save_object(obj, filename):
-    with open(filename, 'wb') as outp:  # Overwrites any existing file.
-        pickle.dump(obj, outp, pickle.HIGHEST_PROTOCOL)
-
-
-def get_gmm_metadata(gmm):
-
-    weights = gmm.weights_
-    means = gmm.means_
-    covars = gmm.covariances_
-
-    weights = list(weights)
-    means = list(means.squeeze())
-    covars = list(covars.squeeze())
-    stds = list(np.sqrt(covars))
-
-    gmm_list = [
-        {"mean": mean, "weight": weight, "std": std}
-        for mean, std, weight in zip(means, stds, weights)
-    ]
-
-    gmm_list = sorted(gmm_list, key=lambda x: x["mean"])
-
-    return gmm_list
-
-
-# Cell
-def solve(m1, m2, std1, std2):
-    a = 1 / (2 * std1 ** 2) - 1 / (2 * std2 ** 2)
-    b = m2 / (std2 ** 2) - m1 / (std1 ** 2)
-    c = (
-        m1 ** 2 / (2 * std1 ** 2)
-        - m2 ** 2 / (2 * std2 ** 2)
-        - np.log(std2 / std1)
-    )
-    return np.roots([a, b, c])

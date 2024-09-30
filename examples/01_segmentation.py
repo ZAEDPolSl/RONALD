@@ -1,4 +1,4 @@
-from bronco.bronchovascular_bundle_segmentation import bronchovascular_bundle_segmentation
+from bronco.run import run
 
 
 if __name__ == "__main__":
@@ -6,4 +6,4 @@ if __name__ == "__main__":
     path_supl = "data/input/patient1_lungs.nrrd"
     path_output = "data/output"
 
-    bronchovascular_bundle_segmentation(path_input, path_supl, path_output)
+    run(path_input, path_output, path_supl)

@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import SimpleITK as sitk
 from sklearn import mixture
-from ..utils_bronchi import solve, get_gmm_metadata
+from bronco.utils import solve, get_gmm_metadata
 
 
 def get_thresholds(gmm_list, max_value):
@@ -55,7 +55,7 @@ def create_thresholded_volumes(thresholds, image_seg_volume):
     return image_thresholded
 
 
-def run_thresholding(sitk_image, sitk_mask=None, path_cache=None, number_of_gmms=3, return_thresholds=False):
+def run_thresholding(sitk_image, sitk_mask=None, path_cache=None, number_of_gmms=3, return_thresholds=True):
     # segment the lung area
     if sitk_mask is not None:
         # get min
@@ -86,11 +86,11 @@ def run_thresholding(sitk_image, sitk_mask=None, path_cache=None, number_of_gmms
     # dist_plot_path = os.path.join(output_path, 'dist_plot.png')
 
     # Model gmm
-    print("Running Gaussian modelling...")
+    # print("Running Gaussian modelling...")
     gmm = mixture.GaussianMixture(n_components=number_of_gmms)
     gmm.fit(X)
 
-    print("Sorting GMMs")
+    # print("Sorting GMMs")
     gmm_list = get_gmm_metadata(gmm)
     thresholds = get_thresholds(gmm_list, X.max())
     thresholds.insert(0, np.min(image) - 1)
@@ -104,7 +104,7 @@ def run_thresholding(sitk_image, sitk_mask=None, path_cache=None, number_of_gmms
             os.path.join(path_cache, "thresholds.csv"), index=False
         )
 
-    print("Generating thresholded volumes...")
+    # print("Generating thresholded volumes...")
     segments = create_thresholded_volumes(thresholds, image)
     # segments = np.swapaxes(segments, 0, 2)
     sitk_segments = sitk.GetImageFromArray(segments)
