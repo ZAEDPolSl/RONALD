@@ -1,3 +1,4 @@
 from .airways_segmentation import airways_segmentation
 from .trachea_segmentation import trachea_main_bronchus_segmentation
 from .lungs_segmentation import lungs_segmentation
+from .lobes_segmentation import lobes_segmentation
