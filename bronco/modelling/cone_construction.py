@@ -9,6 +9,7 @@ def is_point_in_cylinder(
     semi_minor_vector1,
     semi_major_vector2,
     semi_minor_vector2,
+    eps=1e-10
 ):
     """
     Check if points are inside a cylinder with oval bases defined by semi-major and semi-minor axis vectors.
@@ -33,10 +34,9 @@ def is_point_in_cylinder(
     semi_minor_vector1 = np.array(semi_minor_vector1)
     semi_major_vector2 = np.array(semi_major_vector2)
     semi_minor_vector2 = np.array(semi_minor_vector2)
-
     # Compute cylinder axis vector and its unit vector
     axis_vector = c2 - c1
-    height = np.linalg.norm(axis_vector)
+    height = np.linalg.norm(axis_vector + eps)
     axis_unit_vector = axis_vector / height
 
     # Project points onto cylinder's axis
@@ -60,10 +60,10 @@ def is_point_in_cylinder(
     minor_projections = np.zeros(len(points))
 
     # Normalize axis vectors
-    semi_major_unit_vector1 = semi_major_vector1 / np.linalg.norm(semi_major_vector1)
-    semi_minor_unit_vector1 = semi_minor_vector1 / np.linalg.norm(semi_minor_vector1)
-    semi_major_unit_vector2 = semi_major_vector2 / np.linalg.norm(semi_major_vector2)
-    semi_minor_unit_vector2 = semi_minor_vector2 / np.linalg.norm(semi_minor_vector2)
+    semi_major_unit_vector1 = semi_major_vector1 / np.linalg.norm(semi_major_vector1 + eps)
+    semi_minor_unit_vector1 = semi_minor_vector1 / np.linalg.norm(semi_minor_vector1 + eps)
+    semi_major_unit_vector2 = semi_major_vector2 / np.linalg.norm(semi_major_vector2 + eps)
+    semi_minor_unit_vector2 = semi_minor_vector2 / np.linalg.norm(semi_minor_vector2 + eps)
 
     # Project local vectors onto semi-major and semi-minor axis vectors
     for i, choice in enumerate(base_choice):
@@ -78,10 +78,10 @@ def is_point_in_cylinder(
         minor_projections[i] = minor_projection
 
     # Calculate semi-major and semi-minor axes lengths
-    semi_major_axis1 = np.linalg.norm(semi_major_vector1)
-    semi_minor_axis1 = np.linalg.norm(semi_minor_vector1)
-    semi_major_axis2 = np.linalg.norm(semi_major_vector2)
-    semi_minor_axis2 = np.linalg.norm(semi_minor_vector2)
+    semi_major_axis1 = np.linalg.norm(semi_major_vector1 + eps)
+    semi_minor_axis1 = np.linalg.norm(semi_minor_vector1 + eps)
+    semi_major_axis2 = np.linalg.norm(semi_major_vector2 + eps)
+    semi_minor_axis2 = np.linalg.norm(semi_minor_vector2 + eps)
 
     # Check against ellipse equation
     ellipse_checks = np.zeros(len(points))

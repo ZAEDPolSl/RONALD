@@ -5,7 +5,7 @@ from bronco.modelling.oval_construction import find_ellipse
 from bronco.modelling.cone_construction import is_point_in_cylinder
 
 
-def smooth_branch(branch, image, mode="5percent", previous_oval=None):
+def smooth_branch(branch, image, mode=None, previous_oval=None, eps=1e-10):
     """
     Smooth a branch by fitting an ellipse to each point and checking if the point is in the cylinder.
 
@@ -25,14 +25,18 @@ def smooth_branch(branch, image, mode="5percent", previous_oval=None):
         first_5_percent = math.ceil(branch.shape[0] * 0.05)
         last_5_percent = math.floor(branch.shape[0] * 0.95 - 1)
         point1 = branch[first_5_percent]
+        plane_normal1 = branch[first_5_percent+1] - point1
         point2 = branch[last_5_percent]
+        plane_normal2 = point2 - branch[last_5_percent-1]
 
     else:
         point1 = branch[0]
+        plane_normal1 = branch[1] - point1
         point2 = branch[-1]
-    plane_normal = point2 - point1
-    ellipse1 = find_ellipse(image, plane_normal, point1)
-    ellipse2 = find_ellipse(image, plane_normal, point2)
+        plane_normal2 = point2 - branch[-2]
+
+    ellipse1 = find_ellipse(image, plane_normal1, point1)
+    ellipse2 = find_ellipse(image, plane_normal2, point2)
     if previous_oval is not None:
         # check if the new ellipse is bigger than the previous one
         if np.linalg.norm(ellipse1[1]) > np.linalg.norm(
@@ -41,13 +45,13 @@ def smooth_branch(branch, image, mode="5percent", previous_oval=None):
             # normalize the new ellipse to the previous one
             new_major_axis = (
                 ellipse1[1]
-                / np.linalg.norm(ellipse1[1])
-                * np.linalg.norm(max_elipse_major)
+                / (np.linalg.norm(ellipse1[1])+eps)
+                * (np.linalg.norm(max_elipse_major)+eps)
             )
             new_minor_axis = (
                 ellipse1[2]
-                / np.linalg.norm(ellipse1[2])
-                * np.linalg.norm(max_elipse_minor)
+                / (np.linalg.norm(ellipse1[2])+eps)
+                * (np.linalg.norm(max_elipse_minor)+eps)
             )
             ellipse1 = ellipse1[0], new_major_axis, new_minor_axis
         if np.linalg.norm(ellipse2[1]) > np.linalg.norm(
@@ -55,13 +59,13 @@ def smooth_branch(branch, image, mode="5percent", previous_oval=None):
         ) or np.linalg.norm(ellipse2[2]) > np.linalg.norm(max_elipse_minor):
             new_major_axis = (
                 ellipse2[1]
-                / np.linalg.norm(ellipse2[1])
-                * np.linalg.norm(max_elipse_major)
+                / (np.linalg.norm(ellipse2[1])+eps)
+                * (np.linalg.norm(max_elipse_major)+eps)
             )
             new_minor_axis = (
                 ellipse2[2]
-                / np.linalg.norm(ellipse2[2])
-                * np.linalg.norm(max_elipse_minor)
+                / (np.linalg.norm(ellipse2[2])+eps)
+                * (np.linalg.norm(max_elipse_minor)+eps)
             )
             ellipse2 = ellipse2[0], new_major_axis, new_minor_axis
     x, y, z = np.meshgrid(

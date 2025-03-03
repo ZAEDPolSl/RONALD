@@ -1,5 +1,6 @@
 import numpy as np
 from skimage.measure import label, regionprops
+import matplotlib.pyplot as plt
 
 
 def points_in_plane(points, plane_normal, plane_point):
@@ -23,19 +24,38 @@ def points_in_plane(points, plane_normal, plane_point):
     return np.isclose(projection_lengths, 0)
 
 
-def project_points_onto_plane(points, plane_normal, plane_point):
+def fit_plane(points):
+    """
+    Fit a plane to a set of 3D points using SVD.
+
+    Parameters:
+        points: numpy array of shape (N, 3) - Array of 3D points.
+
+    Returns:
+        plane_point: numpy array (3,) - A point on the plane (centroid).
+        plane_normal: numpy array (3,) - Normal vector of the plane.
+    """
+    # Compute centroid
+    plane_point = np.mean(points, axis=0)
+
+    # Perform SVD to find the normal vector
+    _, _, vh = np.linalg.svd(points - plane_point)
+    plane_normal = vh[2]  # Normal is the last row of V^T
+
+    return plane_point, plane_normal
+
+
+def project_points_onto_plane(points, eps=1e-10):
     """
     Project 3D points onto a plane defined by a normal vector and a point on the plane.
 
     Parameters:
         points: numpy array of shape (N, 3) - Array of 3D points.
-        plane_normal: numpy array of shape (3,) - Normal vector of the plane.
-        plane_point: numpy array of shape (3,) - Point on the plane.
-
     Returns:
         projected_points: numpy array of shape (N, 2) - Projected points in the plane's local coordinates.
     """
     # Compute vectors from plane point to each point
+    plane_point, plane_normal = fit_plane(points)
     vectors = points - plane_point
 
     # Project onto plane
@@ -47,7 +67,7 @@ def project_points_onto_plane(points, plane_normal, plane_point):
         perp_vector = np.cross(plane_normal, [0, 0, 1.0])
     else:
         perp_vector = np.cross(plane_normal, [0, 1.0, 0])
-    perp_vector /= np.linalg.norm(perp_vector)
+    perp_vector /= (np.linalg.norm(perp_vector) + eps)
 
     # Find another perpendicular vector (orthonormal basis)
     second_perp_vector = np.cross(plane_normal, perp_vector)
@@ -101,23 +121,15 @@ def get_mask_for_ellipse_fit(image, plane_normal, plane_point):
         local_mask: numpy array of shape (H, W) - Binary mask of points in the plane.
     """
     # get the coordinates of the points in the image
-    x, y, z = np.meshgrid(
-        np.arange(image.shape[0]),
-        np.arange(image.shape[1]),
-        np.arange(image.shape[2]),
-        indexing="ij",
-    )
-    points = np.column_stack((x.ravel(), y.ravel(), z.ravel()))
-    in_original_image = image.ravel() > 0
+    points = np.argwhere(image == 1)
     # Check which points are in the plane
     in_plane = points_in_plane(points, plane_normal, plane_point)
+    
     in_plane_projection = project_points_onto_plane(
-        points[in_plane], plane_normal, plane_point
-    )
-    for_ellipse = in_plane_projection[in_original_image[in_plane]]
-    # get the mask for the local plane
-    local_mask = create_local_mask(for_ellipse)
+        points[in_plane])
 
+    # get the mask for the local plane
+    local_mask = create_local_mask(in_plane_projection)
     return local_mask
 
 
@@ -156,6 +168,7 @@ def transform_ellipse_to_3d(
     semi_major_axis,
     semi_minor_axis,
     rotation_angle,
+    eps=1e-10
 ):
     """
     Transform 2D ellipse parameters to 3D space.
@@ -183,7 +196,7 @@ def transform_ellipse_to_3d(
         perp_vector = np.cross(plane_normal, [0.0, 0.0, 1.0])
     else:
         perp_vector = np.cross(plane_normal, [0.0, 1.0, 0.0])
-    perp_vector /= np.linalg.norm(perp_vector)
+    perp_vector /= (np.linalg.norm(perp_vector) + eps)
 
     # Find another perpendicular vector (orthonormal basis)
     second_perp_vector = np.cross(plane_normal, perp_vector)
@@ -217,7 +230,6 @@ def transform_ellipse_to_3d(
         minor_axis_vector_2d[0] * perp_vector
         + minor_axis_vector_2d[1] * second_perp_vector
     )
-
     return ellipse_center_3d, major_axis_vector_3d, minor_axis_vector_3d
 
 

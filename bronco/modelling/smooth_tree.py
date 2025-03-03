@@ -1,6 +1,7 @@
 import numpy as np
 import SimpleITK as sitk
 from skimage.morphology import skeletonize_3d
+from tqdm import tqdm
 from bronco.external.sknw import build_sknw
 from bronco.modelling.model_branch import smooth_branch
 
@@ -49,7 +50,7 @@ def model_tree(bronco_mask):
     tree_mask = np.zeros_like(bronco_mask_arr)
     node_order = get_node_order(airways_graph)
     max_oval = {node: None for node in node_order}
-    for node in node_order:
+    for node in tqdm(node_order):
         for neighbor in airways_graph.neighbors(node):
             # if neighbor is before node in node_order, then it was already processed
             if node_order.index(neighbor) < node_order.index(node):
