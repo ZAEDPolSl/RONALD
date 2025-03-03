@@ -9,7 +9,7 @@ def is_point_in_cylinder(
     semi_minor_vector1,
     semi_major_vector2,
     semi_minor_vector2,
-    eps=1e-10
+    eps=1e-10,
 ):
     """
     Check if points are inside a cylinder with oval bases defined by semi-major and semi-minor axis vectors.
@@ -53,29 +53,37 @@ def is_point_in_cylinder(
     local_vectors = points_array - closest_points_on_axis
 
     # Determine which base is closer for each point
-    base_choice = np.where(projection_lengths < height / 2, 1, 2)
+    base_choice = projection_lengths < height / 2
 
     # Initialize arrays to store results
     major_projections = np.zeros(len(points))
     minor_projections = np.zeros(len(points))
 
     # Normalize axis vectors
-    semi_major_unit_vector1 = semi_major_vector1 / np.linalg.norm(semi_major_vector1 + eps)
-    semi_minor_unit_vector1 = semi_minor_vector1 / np.linalg.norm(semi_minor_vector1 + eps)
-    semi_major_unit_vector2 = semi_major_vector2 / np.linalg.norm(semi_major_vector2 + eps)
-    semi_minor_unit_vector2 = semi_minor_vector2 / np.linalg.norm(semi_minor_vector2 + eps)
+    semi_major_unit_vector1 = semi_major_vector1 / np.linalg.norm(
+        semi_major_vector1 + eps
+    )
+    semi_minor_unit_vector1 = semi_minor_vector1 / np.linalg.norm(
+        semi_minor_vector1 + eps
+    )
+    semi_major_unit_vector2 = semi_major_vector2 / np.linalg.norm(
+        semi_major_vector2 + eps
+    )
+    semi_minor_unit_vector2 = semi_minor_vector2 / np.linalg.norm(
+        semi_minor_vector2 + eps
+    )
 
     # Project local vectors onto semi-major and semi-minor axis vectors
-    for i, choice in enumerate(base_choice):
-        if choice == 1:
-            major_projection = np.dot(local_vectors[i, :], semi_major_unit_vector1)
-            minor_projection = np.dot(local_vectors[i, :], semi_minor_unit_vector1)
-        else:
-            major_projection = np.dot(local_vectors[i, :], semi_major_unit_vector2)
-            minor_projection = np.dot(local_vectors[i, :], semi_minor_unit_vector2)
-
-        major_projections[i] = major_projection
-        minor_projections[i] = minor_projection
+    major_projections = np.where(
+        base_choice,
+        np.dot(local_vectors, semi_major_unit_vector1),
+        np.dot(local_vectors, semi_major_unit_vector2),
+    )
+    minor_projections = np.where(
+        base_choice,
+        np.dot(local_vectors, semi_minor_unit_vector1),
+        np.dot(local_vectors, semi_minor_unit_vector2),
+    )
 
     # Calculate semi-major and semi-minor axes lengths
     semi_major_axis1 = np.linalg.norm(semi_major_vector1 + eps)
@@ -84,17 +92,16 @@ def is_point_in_cylinder(
     semi_minor_axis2 = np.linalg.norm(semi_minor_vector2 + eps)
 
     # Check against ellipse equation
-    ellipse_checks = np.zeros(len(points))
-    for i, choice in enumerate(base_choice):
-        if choice == 1:
-            ellipse_checks[i] = (major_projections[i] ** 2 / semi_major_axis1**2) + (
-                minor_projections[i] ** 2 / semi_minor_axis1**2
-            )
-        else:
-            ellipse_checks[i] = (major_projections[i] ** 2 / semi_major_axis2**2) + (
-                minor_projections[i] ** 2 / semi_minor_axis2**2
-            )
-    ellipse_checks = ellipse_checks <= 1
+    ellipse_checks = (
+        np.where(
+            base_choice,
+            (major_projections**2 / semi_major_axis1**2)
+            + (minor_projections**2 / semi_minor_axis1**2),
+            (major_projections**2 / semi_major_axis2**2)
+            + (minor_projections**2 / semi_minor_axis2**2),
+        )
+        <= 1
+    )
     inside_cylinder = height_bounds_check & ellipse_checks
     return inside_cylinder.astype(int)
 
