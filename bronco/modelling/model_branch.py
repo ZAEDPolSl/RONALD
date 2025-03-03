@@ -14,7 +14,7 @@ def smooth_branch(branch, image, mode=None, previous_oval=None, eps=1e-10):
         image: numpy array of shape (I, J, K) - 3D binary image
         mode: str - Mode for smoothing the branch. Options are "5percent" or "full".
         previous_oval: tuple - Tuple of the previous ellipse major and minor axis
-
+        eps: float - Small value to avoid division by zero.
     Returns:
         smooth_branch: numpy array of shape (I, J, K) - 3D binary image
     """
@@ -25,9 +25,9 @@ def smooth_branch(branch, image, mode=None, previous_oval=None, eps=1e-10):
         first_5_percent = math.ceil(branch.shape[0] * 0.05)
         last_5_percent = math.floor(branch.shape[0] * 0.95 - 1)
         point1 = branch[first_5_percent]
-        plane_normal1 = branch[first_5_percent+1] - point1
+        plane_normal1 = branch[first_5_percent + 1] - point1
         point2 = branch[last_5_percent]
-        plane_normal2 = point2 - branch[last_5_percent-1]
+        plane_normal2 = point2 - branch[last_5_percent - 1]
 
     else:
         point1 = branch[0]
@@ -45,13 +45,13 @@ def smooth_branch(branch, image, mode=None, previous_oval=None, eps=1e-10):
             # normalize the new ellipse to the previous one
             new_major_axis = (
                 ellipse1[1]
-                / (np.linalg.norm(ellipse1[1])+eps)
-                * (np.linalg.norm(max_elipse_major)+eps)
+                / (np.linalg.norm(ellipse1[1]) + eps)
+                * (np.linalg.norm(max_elipse_major) + eps)
             )
             new_minor_axis = (
                 ellipse1[2]
-                / (np.linalg.norm(ellipse1[2])+eps)
-                * (np.linalg.norm(max_elipse_minor)+eps)
+                / (np.linalg.norm(ellipse1[2]) + eps)
+                * (np.linalg.norm(max_elipse_minor) + eps)
             )
             ellipse1 = ellipse1[0], new_major_axis, new_minor_axis
         if np.linalg.norm(ellipse2[1]) > np.linalg.norm(
@@ -59,13 +59,13 @@ def smooth_branch(branch, image, mode=None, previous_oval=None, eps=1e-10):
         ) or np.linalg.norm(ellipse2[2]) > np.linalg.norm(max_elipse_minor):
             new_major_axis = (
                 ellipse2[1]
-                / (np.linalg.norm(ellipse2[1])+eps)
-                * (np.linalg.norm(max_elipse_major)+eps)
+                / (np.linalg.norm(ellipse2[1]) + eps)
+                * (np.linalg.norm(max_elipse_major) + eps)
             )
             new_minor_axis = (
                 ellipse2[2]
-                / (np.linalg.norm(ellipse2[2])+eps)
-                * (np.linalg.norm(max_elipse_minor)+eps)
+                / (np.linalg.norm(ellipse2[2]) + eps)
+                * (np.linalg.norm(max_elipse_minor) + eps)
             )
             ellipse2 = ellipse2[0], new_major_axis, new_minor_axis
     x, y, z = np.meshgrid(

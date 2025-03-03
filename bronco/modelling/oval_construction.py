@@ -51,6 +51,7 @@ def project_points_onto_plane(points, eps=1e-10):
 
     Parameters:
         points: numpy array of shape (N, 3) - Array of 3D points.
+        eps: float - Small value to avoid division by zero.
     Returns:
         projected_points: numpy array of shape (N, 2) - Projected points in the plane's local coordinates.
     """
@@ -67,7 +68,7 @@ def project_points_onto_plane(points, eps=1e-10):
         perp_vector = np.cross(plane_normal, [0, 0, 1.0])
     else:
         perp_vector = np.cross(plane_normal, [0, 1.0, 0])
-    perp_vector /= (np.linalg.norm(perp_vector) + eps)
+    perp_vector /= np.linalg.norm(perp_vector) + eps
 
     # Find another perpendicular vector (orthonormal basis)
     second_perp_vector = np.cross(plane_normal, perp_vector)
@@ -124,9 +125,8 @@ def get_mask_for_ellipse_fit(image, plane_normal, plane_point):
     points = np.argwhere(image == 1)
     # Check which points are in the plane
     in_plane = points_in_plane(points, plane_normal, plane_point)
-    
-    in_plane_projection = project_points_onto_plane(
-        points[in_plane])
+
+    in_plane_projection = project_points_onto_plane(points[in_plane])
 
     # get the mask for the local plane
     local_mask = create_local_mask(in_plane_projection)
@@ -168,7 +168,7 @@ def transform_ellipse_to_3d(
     semi_major_axis,
     semi_minor_axis,
     rotation_angle,
-    eps=1e-10
+    eps=1e-10,
 ):
     """
     Transform 2D ellipse parameters to 3D space.
@@ -180,7 +180,7 @@ def transform_ellipse_to_3d(
         semi_major_axis: float - Semi-major axis length.
         semi_minor_axis: float - Semi-minor axis length.
         rotation_angle: float - Rotation angle of the ellipse in radians.
-
+        eps: float - Small value to avoid division by zero.
     Returns:
         ellipse_center_3d: numpy array of shape (3,) - Center of the ellipse in 3D coordinates.
         major_axis_vector_3d: numpy array of shape (3,) - Semi-major axis vector in 3D.
@@ -196,7 +196,7 @@ def transform_ellipse_to_3d(
         perp_vector = np.cross(plane_normal, [0.0, 0.0, 1.0])
     else:
         perp_vector = np.cross(plane_normal, [0.0, 1.0, 0.0])
-    perp_vector /= (np.linalg.norm(perp_vector) + eps)
+    perp_vector /= np.linalg.norm(perp_vector) + eps
 
     # Find another perpendicular vector (orthonormal basis)
     second_perp_vector = np.cross(plane_normal, perp_vector)

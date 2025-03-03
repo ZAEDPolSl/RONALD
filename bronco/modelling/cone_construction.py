@@ -22,7 +22,7 @@ def is_point_in_cylinder(
         semi_minor_vector1: tuple (dx_minor1, dy_minor1, dz_minor1) - Semi-minor axis vector of the first base.
         semi_major_vector2: tuple (dx_major2, dy_major2, dz_major2) - Semi-major axis vector of the second base.
         semi_minor_vector2: tuple (dx_minor2, dy_minor2, dz_minor2) - Semi-minor axis vector of the second base.
-
+        eps: float - Small value to avoid division by zero.
     Returns:
         numpy array of bools - True if point is inside or on the cylinder; False otherwise.
     """
