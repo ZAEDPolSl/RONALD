@@ -106,7 +106,7 @@ def create_local_mask(points):
     # Fill in the mask at the integer coordinates
     mask[points_int_shifted[:, 1], points_int_shifted[:, 0]] = 1
 
-    return mask
+    return mask, np.array(min_x, min_y)
 
 
 def get_mask_for_ellipse_fit(image, plane_normal, plane_point):
@@ -129,8 +129,8 @@ def get_mask_for_ellipse_fit(image, plane_normal, plane_point):
     in_plane_projection = project_points_onto_plane(points[in_plane])
 
     # get the mask for the local plane
-    local_mask = create_local_mask(in_plane_projection)
-    return local_mask
+    local_mask, min_coords = create_local_mask(in_plane_projection)
+    return local_mask, min_coords
 
 
 def fit_ellipse_to_mask(mask):
@@ -233,7 +233,7 @@ def transform_ellipse_to_3d(
     return ellipse_center_3d, major_axis_vector_3d, minor_axis_vector_3d
 
 
-def get_ellipse_params(mask, plane_normal, plane_point):
+def get_ellipse_params(mask, min_coords, plane_normal, plane_point):
     """
     Get ellipse parameters for fitting an ellipse to points in the plane.
 
@@ -249,6 +249,8 @@ def get_ellipse_params(mask, plane_normal, plane_point):
     """
     # Fit ellipse to points
     h, k, a, b, theta = fit_ellipse_to_mask(mask)
+    h += min_coords[0]
+    k += min_coords[1]
     ellipse_center, major_axis_vector_3d, minor_axis_vector_3d = (
         transform_ellipse_to_3d(plane_normal, plane_point, (h, k), a, b, theta)
     )
@@ -270,11 +272,11 @@ def find_ellipse(image, plane_normal, plane_point):
         minor_axis_vector_3d: numpy array of shape (3,) - Semi-minor axis vector in 3D.
     """
     # Get mask for ellipse fitting
-    mask = get_mask_for_ellipse_fit(image, plane_normal, plane_point)
+    mask, min_coords = get_mask_for_ellipse_fit(image, plane_normal, plane_point)
 
     # Get ellipse parameters
     ellipse_center_3d, major_axis_vector_3d, minor_axis_vector_3d = get_ellipse_params(
-        mask, plane_normal, plane_point
+        mask, min_coords, plane_normal, plane_point
     )
 
     return ellipse_center_3d, major_axis_vector_3d, minor_axis_vector_3d
