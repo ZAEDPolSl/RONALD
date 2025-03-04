@@ -25,7 +25,7 @@ def points_in_plane(points, plane_normal, plane_point):
     return np.isclose(projection_lengths, 0)
 
 
-def fit_plane(points):
+def fit_plane(points, plane_point):
     """
     Fit a plane to a set of 3D points using SVD.
 
@@ -37,16 +37,16 @@ def fit_plane(points):
         plane_normal: numpy array (3,) - Normal vector of the plane.
     """
     # Compute centroid
-    plane_point = np.mean(points, axis=0)
+    # plane_point = np.mean(points, axis=0)
 
     # Perform SVD to find the normal vector
     _, _, vh = np.linalg.svd(points - plane_point)
     plane_normal = vh[2]  # Normal is the last row of V^T
 
-    return plane_point, plane_normal
+    return plane_normal
 
 
-def project_points_onto_plane(points, eps=1e-10):
+def project_points_onto_plane(points, plane_point, eps=1e-10):
     """
     Project 3D points onto a plane defined by a normal vector and a point on the plane.
 
@@ -57,7 +57,7 @@ def project_points_onto_plane(points, eps=1e-10):
         projected_points: numpy array of shape (N, 2) - Projected points in the plane's local coordinates.
     """
     # Compute vectors from plane point to each point
-    plane_point, plane_normal = fit_plane(points)
+    plane_normal = fit_plane(points, plane_point)
     vectors = points - plane_point
 
     # Project onto plane
@@ -127,7 +127,7 @@ def get_mask_for_ellipse_fit(image, plane_normal, plane_point):
     # Check which points are in the plane
     in_plane = points_in_plane(points, plane_normal, plane_point)
 
-    in_plane_projection = project_points_onto_plane(points[in_plane])
+    in_plane_projection = project_points_onto_plane(points[in_plane], plane_point)
 
     # get the mask for the local plane
     local_mask = create_local_mask(in_plane_projection)
