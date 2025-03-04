@@ -41,7 +41,7 @@ def smooth_branch(branch, image, mode=None, previous_oval=None, eps=1e-10):
         # check if the new ellipse is bigger than the previous one
         if np.linalg.norm(ellipse1[1]) > np.linalg.norm(
             max_elipse_major
-        ) or np.linalg.norm(ellipse1[2]) > np.linalg.norm(max_elipse_minor):
+        ) and np.linalg.norm(max_elipse_minor) > 0:
             # normalize the new ellipse to the previous one
             new_major_axis = (
                 ellipse1[1]
@@ -56,7 +56,7 @@ def smooth_branch(branch, image, mode=None, previous_oval=None, eps=1e-10):
             ellipse1 = ellipse1[0], new_major_axis, new_minor_axis
         if np.linalg.norm(ellipse2[1]) > np.linalg.norm(
             max_elipse_major
-        ) or np.linalg.norm(ellipse2[2]) > np.linalg.norm(max_elipse_minor):
+        ) and np.linalg.norm(max_elipse_minor) > 0:
             new_major_axis = (
                 ellipse2[1]
                 / (np.linalg.norm(ellipse2[1]) + eps)
