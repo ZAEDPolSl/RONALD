@@ -71,17 +71,22 @@ def model_tree(bronco_mask):
             max_oval[neighbor] = lower_oval
             # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
+            break
+        break
     # TODO: connect the branches
-    return tree_mask
+    return tree_mask.astype(int)
 
 
 def smooth_tree(bronco_mask):
     tree_mask = model_tree(bronco_mask)
     sitk_tree_mask = sitk.GetImageFromArray(tree_mask)
+    sitk_tree_mask = sitk.Cast(sitk_tree_mask, sitk.sitkUInt16)
     sitk_tree_mask.CopyInformation(bronco_mask)
 
     np_mask = sitk.GetArrayFromImage(bronco_mask)
-    smoothed_tree = np.logical_and(tree_mask, np_mask)
+    smoothed_tree = np.logical_and(tree_mask, np_mask).astype(int)
     sitk_smoothed_tree = sitk.GetImageFromArray(smoothed_tree)
+    sitk_smoothed_tree = sitk.Cast(sitk_smoothed_tree, sitk.sitkUInt16)
     sitk_smoothed_tree.CopyInformation(bronco_mask)
+
     return sitk_smoothed_tree, sitk_tree_mask
