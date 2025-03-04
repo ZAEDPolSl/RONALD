@@ -77,13 +77,16 @@ def smooth_branch(branch, image, mode=None, previous_oval=None, eps=1e-10):
     points = np.column_stack((x.ravel(), y.ravel(), z.ravel()))
     inside_cylinder = is_point_in_cylinder(
         points,
-        ellipse1[0],
-        ellipse2[0],
+        point1, #ellipse1[0],
+        point2, #ellipse2[0],
         ellipse1[1],
         ellipse1[2],
         ellipse2[1],
         ellipse2[2],
     )
+    print(ellipse1[0], ellipse2[0])
+    print("points og")
+    print(point1, point2)
     # inside cylinder back to 3D
     inside_cylinder = inside_cylinder.reshape(image.shape)
     return inside_cylinder, (ellipse2[1], ellipse2[2])
