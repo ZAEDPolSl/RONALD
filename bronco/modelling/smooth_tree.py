@@ -45,6 +45,8 @@ def get_node_order(graph):
 
 
 def model_tree(bronco_mask):
+    # TODO: get the top of the trachea if necessary
+
     airways_graph = get_skeleton(bronco_mask)
     bronco_mask_arr = sitk.GetArrayFromImage(bronco_mask)
     tree_mask = np.zeros_like(bronco_mask_arr)
