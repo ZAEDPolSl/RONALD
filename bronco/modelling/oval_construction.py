@@ -1,6 +1,7 @@
-import numpy as np
-from skimage.measure import label, regionprops
 import matplotlib.pyplot as plt
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+from skimage.measure import label, regionprops
 
 
 def points_in_plane(points, plane_normal, plane_point):
@@ -163,7 +164,6 @@ def fit_ellipse_to_mask(mask):
 
 def transform_ellipse_to_3d(
     plane_normal,
-    plane_point,
     ellipse_center_2d,
     semi_major_axis,
     semi_minor_axis,
@@ -175,7 +175,6 @@ def transform_ellipse_to_3d(
 
     Parameters:
         plane_normal: numpy array of shape (3,) - Normal vector of the plane.
-        plane_point: numpy array of shape (3,) - Point on the plane.
         ellipse_center_2d: tuple (h, k) - Center of the ellipse in the plane's local coordinates.
         semi_major_axis: float - Semi-major axis length.
         semi_minor_axis: float - Semi-minor axis length.
@@ -188,7 +187,7 @@ def transform_ellipse_to_3d(
     """
     # Convert inputs to numpy arrays
     plane_normal = np.array(plane_normal)
-    plane_point = np.array(plane_point)
+    plane_normal /= np.linalg.norm(plane_normal) + eps
 
     # Define local coordinate system in the plane
     # Find a vector perpendicular to plane_normal
@@ -201,36 +200,14 @@ def transform_ellipse_to_3d(
     # Find another perpendicular vector (orthonormal basis)
     second_perp_vector = np.cross(plane_normal, perp_vector)
 
-    # Transform ellipse center to 3D
-    ellipse_center_3d = (
-        plane_point
-        + ellipse_center_2d[0] * perp_vector
-        + ellipse_center_2d[1] * second_perp_vector
-    )
+    rot = R.from_rotvec(rotation_angle * plane_normal)  # Rotation around normal
+    major_vector = rot.apply(perp_vector) * semi_major_axis / 2
+    minor_vector = rot.apply(second_perp_vector) * semi_minor_axis / 2
 
-    # Transform axes to 3D
-    major_axis_vector_2d = np.array(
-        [
-            semi_major_axis * np.cos(rotation_angle),
-            semi_major_axis * np.sin(rotation_angle),
-        ]
-    )
-    minor_axis_vector_2d = np.array(
-        [
-            -semi_minor_axis * np.sin(rotation_angle),
-            semi_minor_axis * np.cos(rotation_angle),
-        ]
-    )
-
-    major_axis_vector_3d = (
-        major_axis_vector_2d[0] * perp_vector
-        + major_axis_vector_2d[1] * second_perp_vector
-    )
-    minor_axis_vector_3d = (
-        minor_axis_vector_2d[0] * perp_vector
-        + minor_axis_vector_2d[1] * second_perp_vector
-    )
-    return ellipse_center_3d, major_axis_vector_3d, minor_axis_vector_3d
+    center_3d = (
+        ellipse_center_2d[0] * perp_vector + ellipse_center_2d[1] * second_perp_vector
+    )  # Map 2D coordinates into 3D plane
+    return center_3d, major_vector, minor_vector
 
 
 def get_ellipse_params(mask, plane_normal, plane_point):
