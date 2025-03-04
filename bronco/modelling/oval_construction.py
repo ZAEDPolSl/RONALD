@@ -106,7 +106,7 @@ def create_local_mask(points):
     # Fill in the mask at the integer coordinates
     mask[points_int_shifted[:, 1], points_int_shifted[:, 0]] = 1
 
-    return mask, np.array(min_x, min_y)
+    return mask, np.array([min_x, min_y])
 
 
 def get_mask_for_ellipse_fit(image, plane_normal, plane_point):
