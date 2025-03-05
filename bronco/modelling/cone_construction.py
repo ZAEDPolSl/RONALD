@@ -73,7 +73,7 @@ def is_point_in_cylinder(
     semi_minor_axis = (1 - t) * np.linalg.norm(semi_minor_vector1) + t * np.linalg.norm(semi_minor_vector2)
 
     # Check against ellipse equation
-    ellipse_checks = (major_projections**2 / semi_major_axis**2) + (minor_projections**2 / semi_minor_axis**2) <= 1
+    ellipse_checks = (major_projections**2 / (semi_major_axis**2+eps)) + (minor_projections**2 / (semi_minor_axis**2+eps)) <= 1
 
     # Final check: Is the point inside the cylinder?
     inside_cylinder = height_bounds_check & ellipse_checks
