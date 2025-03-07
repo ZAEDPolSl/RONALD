@@ -37,6 +37,22 @@ def smooth_branch(branch, image, mode=None, previous_oval=None, eps=1e-10):
 
     ellipse1 = find_ellipse(image, plane_normal1, point1)
     ellipse2 = find_ellipse(image, plane_normal2, point2)
+
+    if np.linalg.norm(ellipse2[1]) > np.linalg.norm(
+            ellipse1[1]
+        ) and np.linalg.norm(ellipse1[2]) > 0:
+        new_major_axis = (
+            ellipse2[1]
+            / (np.linalg.norm(ellipse2[1]) + eps)
+            * (np.linalg.norm(ellipse1[1]) + eps)
+        )
+        new_minor_axis = (
+            ellipse2[2]
+            / (np.linalg.norm(ellipse2[2]) + eps)
+            * (np.linalg.norm(ellipse1[2]) + eps)
+        )
+        ellipse2 = ellipse2[0], new_major_axis, new_minor_axis
+
     if previous_oval is not None:
         # check if the new ellipse is bigger than the previous one
         if np.linalg.norm(ellipse1[1]) > np.linalg.norm(
