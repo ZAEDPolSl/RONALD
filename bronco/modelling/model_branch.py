@@ -3,7 +3,6 @@ import math
 
 from bronco.modelling.oval_construction import find_ellipse
 from bronco.modelling.cone_construction import is_point_in_cylinder
-from bronco.modelling.visvalingam import visvalingam_whyatt_3d
 
 
 def smooth_branch(branch, image, mode=None, previous_oval=None, eps=1e-10):
@@ -19,77 +18,73 @@ def smooth_branch(branch, image, mode=None, previous_oval=None, eps=1e-10):
     Returns:
         smooth_branch: numpy array of shape (I, J, K) - 3D binary image
     """
-    nodes = visvalingam_whyatt_3d(branch, 1.6)  # 0.71, 0.87 and 1.01 next
-    print(nodes)
-    branch_mask = np.zeros(image.shape)
-    # for all but last node
-    for i in range(len(nodes) - 1):
-        if previous_oval is not None:
-            max_elipse_major = previous_oval[0]
-            max_elipse_minor = previous_oval[1]
+    if previous_oval is not None:
+        max_elipse_major = previous_oval[0]
+        max_elipse_minor = previous_oval[1]
+    if mode == "5percent":
+        first_5_percent = math.ceil(branch.shape[0] * 0.05)
+        last_5_percent = math.floor(branch.shape[0] * 0.95 - 1)
+        point1 = branch[first_5_percent]
+        plane_normal1 = branch[first_5_percent + 1] - point1
+        point2 = branch[last_5_percent]
+        plane_normal2 = point2 - branch[last_5_percent - 1]
 
-        point1 = nodes[i]
-        point2 = nodes[i + 1]
-        # plane_normal1 = branch[1] - point1
-        plane_normal1 = point2 - point1
-        # plane_normal2 = point2 - branch[-2]
-        plane_normal2 = point1 - point2
+    else:
+        point1 = branch[0]
+        plane_normal1 = branch[1] - point1
+        point2 = branch[-1]
+        plane_normal2 = point2 - branch[-2]
 
-        ellipse1 = find_ellipse(image, plane_normal1, point1)
-        ellipse2 = find_ellipse(image, plane_normal2, point2)
-        if previous_oval is not None:
-            # check if the new ellipse is bigger than the previous one
-            if (
-                np.linalg.norm(ellipse1[1]) > np.linalg.norm(max_elipse_major)
-                and np.linalg.norm(max_elipse_minor) > 0
-            ):
-                # normalize the new ellipse to the previous one
-                new_major_axis = (
-                    ellipse1[1]
-                    / (np.linalg.norm(ellipse1[1]) + eps)
-                    * (np.linalg.norm(max_elipse_major) + eps)
-                )
-                new_minor_axis = (
-                    ellipse1[2]
-                    / (np.linalg.norm(ellipse1[2]) + eps)
-                    * (np.linalg.norm(max_elipse_minor) + eps)
-                )
-                ellipse1 = ellipse1[0], new_major_axis, new_minor_axis
-            if (
-                np.linalg.norm(ellipse2[1]) > np.linalg.norm(max_elipse_major)
-                and np.linalg.norm(max_elipse_minor) > 0
-            ):
-                new_major_axis = (
-                    ellipse2[1]
-                    / (np.linalg.norm(ellipse2[1]) + eps)
-                    * (np.linalg.norm(max_elipse_major) + eps)
-                )
-                new_minor_axis = (
-                    ellipse2[2]
-                    / (np.linalg.norm(ellipse2[2]) + eps)
-                    * (np.linalg.norm(max_elipse_minor) + eps)
-                )
-                ellipse2 = ellipse2[0], new_major_axis, new_minor_axis
-        x, y, z = np.meshgrid(
-            np.arange(image.shape[0]),
-            np.arange(image.shape[1]),
-            np.arange(image.shape[2]),
-            indexing="ij",
-        )
-        points = np.column_stack((x.ravel(), y.ravel(), z.ravel()))
-        inside_cylinder = is_point_in_cylinder(
-            points,
-            point1,  # ellipse1[0],
-            point2,  # ellipse2[0],
-            ellipse1[1],
-            ellipse1[2],
-            ellipse2[1],
-            ellipse2[2],
-        )
+    ellipse1 = find_ellipse(image, plane_normal1, point1)
+    ellipse2 = find_ellipse(image, plane_normal2, point2)
+    if previous_oval is not None:
+        # check if the new ellipse is bigger than the previous one
+        if np.linalg.norm(ellipse1[1]) > np.linalg.norm(
+            max_elipse_major
+        ) and np.linalg.norm(max_elipse_minor) > 0:
+            # normalize the new ellipse to the previous one
+            new_major_axis = (
+                ellipse1[1]
+                / (np.linalg.norm(ellipse1[1]) + eps)
+                * (np.linalg.norm(max_elipse_major) + eps)
+            )
+            new_minor_axis = (
+                ellipse1[2]
+                / (np.linalg.norm(ellipse1[2]) + eps)
+                * (np.linalg.norm(max_elipse_minor) + eps)
+            )
+            ellipse1 = ellipse1[0], new_major_axis, new_minor_axis
+        if np.linalg.norm(ellipse2[1]) > np.linalg.norm(
+            max_elipse_major
+        ) and np.linalg.norm(max_elipse_minor) > 0:
+            new_major_axis = (
+                ellipse2[1]
+                / (np.linalg.norm(ellipse2[1]) + eps)
+                * (np.linalg.norm(max_elipse_major) + eps)
+            )
+            new_minor_axis = (
+                ellipse2[2]
+                / (np.linalg.norm(ellipse2[2]) + eps)
+                * (np.linalg.norm(max_elipse_minor) + eps)
+            )
+            ellipse2 = ellipse2[0], new_major_axis, new_minor_axis
+    x, y, z = np.meshgrid(
+        np.arange(image.shape[0]),
+        np.arange(image.shape[1]),
+        np.arange(image.shape[2]),
+        indexing="ij",
+    )
+    points = np.column_stack((x.ravel(), y.ravel(), z.ravel()))
+    inside_cylinder = is_point_in_cylinder(
+        points,
+        point1, #ellipse1[0],
+        point2, #ellipse2[0],
+        ellipse1[1],
+        ellipse1[2],
+        ellipse2[1],
+        ellipse2[2],
+    )
 
-        # inside cylinder back to 3D
-        inside_cylinder = inside_cylinder.reshape(image.shape)
-        branch_mask = np.logical_or(branch_mask, inside_cylinder)
-        max_elipse_major = ellipse1[1]
-        max_elipse_minor = ellipse1[2]
-    return branch_mask, (ellipse2[1], ellipse2[2])
+    # inside cylinder back to 3D
+    inside_cylinder = inside_cylinder.reshape(image.shape)
+    return inside_cylinder, (ellipse2[1], ellipse2[2])
