@@ -1,6 +1,5 @@
 import numpy as np
 from skimage.measure import label, regionprops
-import matplotlib.pyplot as plt
 
 
 def points_in_plane(points, plane_normal, plane_point):
@@ -45,7 +44,7 @@ def fit_plane(points):
     return plane_point, plane_normal
 
 
-def project_points_onto_plane(points, eps=1e-10):
+def project_points_onto_plane(points, plane_normal, eps=1e-10):
     """
     Project 3D points onto a plane defined by a normal vector and a point on the plane.
 
@@ -56,7 +55,7 @@ def project_points_onto_plane(points, eps=1e-10):
         projected_points: numpy array of shape (N, 2) - Projected points in the plane's local coordinates.
     """
     # Compute vectors from plane point to each point
-    plane_point, plane_normal = fit_plane(points)
+    plane_point, _ = fit_plane(points)
     vectors = points - plane_point
 
     # Project onto plane
@@ -109,25 +108,22 @@ def create_local_mask(points):
     return mask, np.array([min_x, min_y])
 
 
-def get_mask_for_ellipse_fit(image, plane_normal, plane_point):
+def get_mask_for_ellipse_fit(points, plane_normal, plane_point):
     """
     Get mask in the plane for fitting an ellipse.
 
     Parameters:
-        image: numpy array of shape (I, J, K) - 3D binary image
+        image: numpy array of shape (N, 3) - points that can be in the ellipse
         plane_normal: numpy array of shape (3,) - Normal vector of the plane.
         plane_point: numpy array of shape (3,) - Point on the plane.
 
     Returns:
         local_mask: numpy array of shape (H, W) - Binary mask of points in the plane.
     """
-    # get the coordinates of the points in the image
-    points = np.argwhere(image == 1)
     # Check which points are in the plane
     in_plane = points_in_plane(points, plane_normal, plane_point)
 
-    in_plane_projection = project_points_onto_plane(points[in_plane])
-
+    in_plane_projection = project_points_onto_plane(points[in_plane], plane_normal)
     # get the mask for the local plane
     local_mask, min_coords = create_local_mask(in_plane_projection)
     return local_mask, min_coords
@@ -257,12 +253,12 @@ def get_ellipse_params(mask, min_coords, plane_normal, plane_point):
     return ellipse_center, major_axis_vector_3d, minor_axis_vector_3d
 
 
-def find_ellipse(image, plane_normal, plane_point):
+def find_ellipse(points, plane_normal, plane_point):
     """
     Find an ellipse in the plane defined by a normal vector and a point on the plane.
 
     Parameters:
-        image: numpy array of shape (I, J, K) - 3D binary image
+        image: numpy array of shape (N, 3) - Points in the mask
         plane_normal: numpy array of shape (3,) - Normal vector of the plane.
         plane_point: numpy array of shape (3,) - Point on the plane.
 
@@ -271,8 +267,10 @@ def find_ellipse(image, plane_normal, plane_point):
         major_axis_vector_3d: numpy array of shape (3,) - Semi-major axis vector in 3D.
         minor_axis_vector_3d: numpy array of shape (3,) - Semi-minor axis vector in 3D.
     """
+    plane_normal = plane_normal.astype(float)
+    plane_normal /= np.linalg.norm(plane_normal)
     # Get mask for ellipse fitting
-    mask, min_coords = get_mask_for_ellipse_fit(image, plane_normal, plane_point)
+    mask, min_coords = get_mask_for_ellipse_fit(points, plane_normal, plane_point)
 
     # Get ellipse parameters
     ellipse_center_3d, major_axis_vector_3d, minor_axis_vector_3d = get_ellipse_params(

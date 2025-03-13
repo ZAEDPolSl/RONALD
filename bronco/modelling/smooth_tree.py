@@ -1,6 +1,6 @@
 import numpy as np
 import SimpleITK as sitk
-from skimage.morphology import skeletonize_3d
+from skimage.morphology import skeletonize
 from tqdm import tqdm
 from bronco.external.sknw import build_sknw
 from bronco.modelling.model_branch import smooth_branch
@@ -8,7 +8,7 @@ from bronco.modelling.model_branch import smooth_branch
 
 def get_skeleton(mask):
     airways = sitk.GetArrayFromImage(mask)
-    skeleton = skeletonize_3d(airways)
+    skeleton = skeletonize(airways)
     skeleton = skeleton.astype(int)
     sitk_skeleton = sitk.GetImageFromArray(skeleton)
     sitk_skeleton.CopyInformation(mask)
@@ -52,6 +52,7 @@ def model_tree(bronco_mask):
     tree_mask = np.zeros_like(bronco_mask_arr)
     node_order = get_node_order(airways_graph)
     max_oval = {node: None for node in node_order}
+    i = 0
     for node in tqdm(node_order):
         for neighbor in airways_graph.neighbors(node):
             # if neighbor is before node in node_order, then it was already processed
@@ -73,6 +74,10 @@ def model_tree(bronco_mask):
             max_oval[neighbor] = lower_oval
             # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
+            # break
+        i += 1
+        # if i == 2:
+        break
     # TODO: connect the branches
     return tree_mask.astype(int)
 
