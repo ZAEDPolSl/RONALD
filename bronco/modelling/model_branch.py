@@ -47,8 +47,8 @@ def separate_branch(image, endpoints):
     points_same_as_first = transformed_points[mask_first]
     points_same_as_second = transformed_points[mask_second]
 
-    ellipse1 = f_el(points_same_as_first, transformed_endpoints[0, :], svd)
-    ellipse2 = f_el(points_same_as_second, transformed_endpoints[1, :], svd)
+    ellipse1 = f_el(points_same_as_first, transformed_endpoints[0, :])
+    ellipse2 = f_el(points_same_as_second, transformed_endpoints[1, :])
     return [ellipse1, ellipse2], svd
 
 
