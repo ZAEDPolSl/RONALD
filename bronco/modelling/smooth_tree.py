@@ -51,14 +51,12 @@ def model_tree(bronco_mask):
     bronco_mask_arr = sitk.GetArrayFromImage(bronco_mask)
     tree_mask = np.zeros_like(bronco_mask_arr)
     node_order = get_node_order(airways_graph)
-    max_oval = {node: None for node in node_order}
     i = 0
     for node in tqdm(node_order):
         for neighbor in airways_graph.neighbors(node):
             # if neighbor is before node in node_order, then it was already processed
             if node_order.index(neighbor) < node_order.index(node):
                 continue
-            current_oval = max_oval[node]
             # get the edge between node and neighbor
             edge = airways_graph.get_edge_data(node, neighbor)
             # get the points in the edge
@@ -67,11 +65,7 @@ def model_tree(bronco_mask):
             if not (edge_points[0] == airways_graph.nodes()[node]["o"]).all():
                 edge_points = edge_points[::-1]
             # smooth the branch
-            branch_mask, lower_oval = smooth_branch(
-                edge_points, bronco_mask_arr, previous_oval=current_oval
-            )
-            # update the max_oval
-            max_oval[neighbor] = lower_oval
+            branch_mask = smooth_branch(edge_points, bronco_mask_arr)
             # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
             # break

@@ -3,7 +3,7 @@ import numpy as np
 from bronco.modelling.visvalingam import visvalingam_whyatt_3d
 
 
-def segment_branch(branch):
+def segment_branch(branch: np.ndarray) -> np.ndarray:
     """Segment a branch by using Visvalingam-Whyatt algorithm.
 
     Parameters

@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def calculate_triangle_areas(points):
+def calculate_triangle_areas(points: np.ndarray) -> np.ndarray:
     """
     Vectorized calculation of areas for multiple 3D triangles.
 
@@ -20,7 +20,7 @@ def calculate_triangle_areas(points):
     return areas
 
 
-def prepare_triangles(points):
+def prepare_triangles(points: np.ndarray) -> np.ndarray:
     """
     Prepare triangles from consecutive points for area calculation in a vectorized way.
 
@@ -35,7 +35,7 @@ def prepare_triangles(points):
     return triangles
 
 
-def visvalingam_whyatt_3d(points, epsilon=0.51):
+def visvalingam_whyatt_3d(points: np.ndarray, epsilon=0.51) -> np.ndarray:
     """
     Simplify a polyline in 3D using the Visvalingam-Whyatt algorithm with NumPy arrays.
 
@@ -70,5 +70,4 @@ def visvalingam_whyatt_3d(points, epsilon=0.51):
         # If only two points remain, stop
         if len(points) <= 2:
             break
-    print(areas)
     return points
