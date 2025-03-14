@@ -7,7 +7,7 @@ def mediastinum_segmentation(sitk_segmentation, sitk_image=None):
     min.Execute(sitk_segmentation)
     min_seg = min.GetMinimum()
     # create mask
-    sitk_segmentation = (sitk_segmentation > min_seg)
+    sitk_segmentation = sitk_segmentation > min_seg
     # closing
     closing = sitk.BinaryMorphologicalClosingImageFilter()
     sitk_segmentation = closing.Execute(sitk_segmentation)
@@ -19,7 +19,7 @@ def mediastinum_segmentation(sitk_segmentation, sitk_image=None):
     sitk_lung_region.CopyInformation(sitk_segmentation)
     sitk_segmentation.CopyInformation(sitk_segmentation)
     # opening
-    sitk_segmentation = (sitk_lung_region - sitk_segmentation)
+    sitk_segmentation = sitk_lung_region - sitk_segmentation
     opening = sitk.BinaryMorphologicalOpeningImageFilter()
     opening.SetKernelRadius(3)
     sitk_segmentation = opening.Execute(sitk_segmentation)

@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def calculate_triangle_areas(points):
     """
     Vectorized calculation of areas for multiple 3D triangles.
@@ -51,21 +52,21 @@ def visvalingam_whyatt_3d(points, epsilon=0.51):
     while True:
         triangles = prepare_triangles(points)
         areas = calculate_triangle_areas(triangles)
-        
+
         # Initialize point_areas with infinity
-        point_areas = np.full(len(points), float('inf'))
+        point_areas = np.full(len(points), float("inf"))
         point_areas[1:-1] = areas
-        
+
         # Find index of point with smallest area
         min_area_index = np.argmin(point_areas)
-        
+
         # Stop if all remaining areas exceed epsilon
         if point_areas[min_area_index] >= epsilon:
             break
-        
+
         # Remove point with smallest area
         points = np.delete(points, min_area_index, axis=0)
-        
+
         # If only two points remain, stop
         if len(points) <= 2:
             break

@@ -12,7 +12,8 @@ def sitk_resample(itk_image, out_spacing=(2.0, 2.0, 2.0), is_label=False):
     out_size = [
         int(np.round(original_size[0] * (original_spacing[0] / out_spacing[0]))),
         int(np.round(original_size[1] * (original_spacing[1] / out_spacing[1]))),
-        int(np.round(original_size[2] * (original_spacing[2] / out_spacing[2])))]
+        int(np.round(original_size[2] * (original_spacing[2] / out_spacing[2]))),
+    ]
 
     resample = sitk.ResampleImageFilter()
     resample.SetOutputSpacing(out_spacing)
@@ -59,9 +60,7 @@ def slicing_decorator(func):
 
             img_list.append(func(extractor.Execute(image), *args, **kwargs))
 
-        return sitk.JoinSeries(
-            img_list, image.GetOrigin()[-1], image.GetSpacing()[-1]
-        )
+        return sitk.JoinSeries(img_list, image.GetOrigin()[-1], image.GetSpacing()[-1])
 
     return slice_by_slice
 

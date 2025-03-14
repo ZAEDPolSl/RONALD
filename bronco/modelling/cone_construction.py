@@ -1,8 +1,6 @@
 import numpy as np
 
 
-import numpy as np
-
 def is_point_in_cylinder(
     points,
     center1,
@@ -25,7 +23,7 @@ def is_point_in_cylinder(
         semi_major_vector2: tuple (dx_major2, dy_major2, dz_major2) - Semi-major axis vector of the second base.
         semi_minor_vector2: tuple (dx_minor2, dy_minor2, dz_minor2) - Semi-minor axis vector of the second base.
         eps: float - Small value to avoid division by zero.
-    
+
     Returns:
         numpy array of bools - True if point is inside or on the cylinder; False otherwise.
     """
@@ -64,16 +62,24 @@ def is_point_in_cylinder(
     minor_interp = (1 - t[:, None]) * minor1 + t[:, None] * minor2
 
     # Renormalize interpolated vectors to preserve ellipse shape
-    major_unit = major_interp / (np.linalg.norm(major_interp, axis=1, keepdims=True) + eps)
-    minor_unit = minor_interp / (np.linalg.norm(minor_interp, axis=1, keepdims=True) + eps)
+    major_unit = major_interp / (
+        np.linalg.norm(major_interp, axis=1, keepdims=True) + eps
+    )
+    minor_unit = minor_interp / (
+        np.linalg.norm(minor_interp, axis=1, keepdims=True) + eps
+    )
 
     # Compute the correct semi-major and semi-minor axes lengths at each interpolation step
     semi_major_length = (1 - t) * np.linalg.norm(major1) + t * np.linalg.norm(major2)
     semi_minor_length = (1 - t) * np.linalg.norm(minor1) + t * np.linalg.norm(minor2)
 
     # Project local vectors onto the unit major and minor axes
-    major_projections = np.einsum("ij,ij->i", local_vectors, major_unit) / semi_major_length
-    minor_projections = np.einsum("ij,ij->i", local_vectors, minor_unit) / semi_minor_length
+    major_projections = (
+        np.einsum("ij,ij->i", local_vectors, major_unit) / semi_major_length
+    )
+    minor_projections = (
+        np.einsum("ij,ij->i", local_vectors, minor_unit) / semi_minor_length
+    )
 
     # Ellipse equation check
     ellipse_checks = (major_projections**2 + minor_projections**2) <= 1

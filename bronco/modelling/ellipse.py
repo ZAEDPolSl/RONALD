@@ -19,13 +19,15 @@ def compute_ellipse_axes_3d(xc, yc, zc, a, b, theta, pca):
     - Semi-minor axis vector in 3D.
     """
     # Define points on the ellipse in 2D (parameter t = 0, π for major; π/2, 3π/2 for minor)
-    points_2d = np.array([
-        [xc + a * np.cos(theta), yc + a * np.sin(theta)],  # Major axis point 1
-        [xc - a * np.cos(theta), yc - a * np.sin(theta)],  # Major axis point 2
-        [xc - b * np.sin(theta), yc + b * np.cos(theta)],  # Minor axis point 1
-        [xc + b * np.sin(theta), yc - b * np.cos(theta)]   # Minor axis point 2
-    ])
-    
+    points_2d = np.array(
+        [
+            [xc + a * np.cos(theta), yc + a * np.sin(theta)],  # Major axis point 1
+            [xc - a * np.cos(theta), yc - a * np.sin(theta)],  # Major axis point 2
+            [xc - b * np.sin(theta), yc + b * np.cos(theta)],  # Minor axis point 1
+            [xc + b * np.sin(theta), yc - b * np.cos(theta)],  # Minor axis point 2
+        ]
+    )
+
     # Add z-coordinate (assume all points lie on the same z-plane initially)
     points_3d = np.column_stack([points_2d, np.full(points_2d.shape[0], zc)])
 
@@ -36,17 +38,17 @@ def compute_ellipse_axes_3d(xc, yc, zc, a, b, theta, pca):
     major_axis_vector = transformed_points[1] - transformed_points[0]
     minor_axis_vector = transformed_points[3] - transformed_points[2]
 
-    return major_axis_vector/2, minor_axis_vector/2
+    return major_axis_vector / 2, minor_axis_vector / 2
 
 
 def get_axes_3d(xc, yc, zc, a, b, theta):
     center_3d = np.array([zc, xc, yc])
     major_axis_3d = np.array(
-    [
-        0.0,
-        a * np.cos(theta),
-        a * np.sin(theta),
-    ]
+        [
+            0.0,
+            a * np.cos(theta),
+            a * np.sin(theta),
+        ]
     )
     minor_axis_3d = np.array(
         [
@@ -73,7 +75,6 @@ def fit_ellipse_3d(points, center_point, SVD):
     points_2d = points[:, 1:]  # Taking second and third coordinates as 2D projection
     hull_obj = ConvexHull(points_2d)
     hull = points_2d[hull_obj.vertices]
-
 
     # Handle case with too few points
     circle_check = points.shape[0] < 5
@@ -107,7 +108,9 @@ def fit_ellipse_3d(points, center_point, SVD):
 
     # axes_3d = compute_ellipse_axes_3d(xc, yc, center_point[0], a, b, theta, SVD)
     # major_axis_3d, minor_axis_3d = axes_3d[0], axes_3d[1]
-    center_3d, major_axis_3d, minor_axis_3d = get_axes_3d(xc, yc, center_point[0], a, b, theta)
+    center_3d, major_axis_3d, minor_axis_3d = get_axes_3d(
+        xc, yc, center_point[0], a, b, theta
+    )
 
     return center_3d, major_axis_3d, minor_axis_3d
 

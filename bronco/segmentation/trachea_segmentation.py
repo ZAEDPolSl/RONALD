@@ -14,13 +14,17 @@ def trachea_main_bronchus_segmentation(sitk_image, sitk_lungs, return_all=False)
     sitk_stats.Execute(sitk_mediastinum_view)
     _min = sitk_stats.GetMinimum()
     seed_range = (_min, _min // 3)
-    sitk_trachea = sitk.BinaryThreshold(sitk_mediastinum_view, seed_range[0], seed_range[1])
+    sitk_trachea = sitk.BinaryThreshold(
+        sitk_mediastinum_view, seed_range[0], seed_range[1]
+    )
 
     # clean the bronchi
     sitk_trachea = erosion_by_slice(sitk_trachea)
 
     # get bronchi only
-    labelled_trachea, components = get_connected_components(sitk.GetArrayFromImage(sitk_trachea))
+    labelled_trachea, components = get_connected_components(
+        sitk.GetArrayFromImage(sitk_trachea)
+    )
     largest_component = components[-1]
     labelled_trachea[labelled_trachea != largest_component[0]] = 0
     labelled_trachea[labelled_trachea == largest_component[0]] = 1
