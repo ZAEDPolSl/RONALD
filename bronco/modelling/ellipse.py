@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial import ConvexHull
 from skimage.measure import EllipseModel, CircleModel
 
 
@@ -35,7 +36,27 @@ def compute_ellipse_axes_3d(xc, yc, zc, a, b, theta, pca):
     major_axis_vector = transformed_points[1] - transformed_points[0]
     minor_axis_vector = transformed_points[3] - transformed_points[2]
 
-    return major_axis_vector, minor_axis_vector
+    return major_axis_vector/2, minor_axis_vector/2
+
+
+def get_axes_3d(xc, yc, zc, a, b, theta):
+    center_3d = np.array([zc, xc, yc])
+    major_axis_3d = np.array(
+    [
+        0.0,
+        a * np.cos(theta),
+        a * np.sin(theta),
+    ]
+    )
+    minor_axis_3d = np.array(
+        [
+            0.0,
+            -b * np.sin(theta),
+            b * np.cos(theta),
+        ]
+    )
+
+    return center_3d, major_axis_3d, minor_axis_3d
 
 
 def fit_ellipse_3d(points, center_point, SVD):
@@ -50,6 +71,9 @@ def fit_ellipse_3d(points, center_point, SVD):
     height_axis, x_axis, y_axis = SVD.components_
 
     points_2d = points[:, 1:]  # Taking second and third coordinates as 2D projection
+    hull_obj = ConvexHull(points_2d)
+    hull = points_2d[hull_obj.vertices]
+
 
     # Handle case with too few points
     circle_check = points.shape[0] < 5
@@ -57,45 +81,33 @@ def fit_ellipse_3d(points, center_point, SVD):
     # Fit ellipse in 2D using skimage
     if not circle_check:
         ellipse = EllipseModel()
-        if ellipse.estimate(points_2d):
+        if ellipse.estimate(hull):
             xc, yc, a, b, theta = ellipse.params
-            print("Ellipse model")
         else:
             circle_check = True
 
     if circle_check:
         theta = 0
-        center = np.mean(points, axis=0)
+        center = np.mean(hull, axis=0)
         if points.shape[0] >= 3:
-            print("Circle model")
             circle = CircleModel()
-            circle.estimate(points_2d)
+            circle.estimate(hull)
             xc, yc, r = circle.params
             a = b = r
         elif points.shape[0] == 2:
-            print("2 points")
-            _, xc, yc = center
-            r = np.linalg.norm(points_2d[0] - points_2d[1]) / 2
+            xc, yc = center
+            r = np.linalg.norm(hull[0] - hull[1]) / 2
             a = b = r
         else:
-            print("Insufficient data")
-            _, xc, yc = center
+            xc, yc = center
             a = b = 1e-10
     # Calculate the 3D center using the height component from the original center point
-    center_2d = np.array([xc, yc])
-    center_3d = SVD.inverse_transform(np.array([center_point[0], *center_2d]).reshape(1, -1)).flatten()
+    # center_2d = np.array([xc, yc])
+    # center_3d = SVD.inverse_transform(np.array([center_point[0], *center_2d]).reshape(1, -1)).flatten()
 
-    # Compute the 2D major and minor axis vectors scaled by their lengths
-    major_axis_2d = np.array([a * np.cos(theta), a * np.sin(theta)])
-    minor_axis_2d = np.array([-b * np.sin(theta), b * np.cos(theta)])
-
-    # Create the 3D axes by adding the first component (0) and perform inverse transform only once
-    axes_3d = SVD.inverse_transform(np.array([[0, *major_axis_2d], [0, *minor_axis_2d]]))
-    print("old")
-    print(axes_3d)
-    print("----")
-    axes_3d = compute_ellipse_axes_3d(xc, yc, center_point[0], a, b, theta, SVD)
-    major_axis_3d, minor_axis_3d = axes_3d[0], axes_3d[1]
+    # axes_3d = compute_ellipse_axes_3d(xc, yc, center_point[0], a, b, theta, SVD)
+    # major_axis_3d, minor_axis_3d = axes_3d[0], axes_3d[1]
+    center_3d, major_axis_3d, minor_axis_3d = get_axes_3d(xc, yc, center_point[0], a, b, theta)
 
     return center_3d, major_axis_3d, minor_axis_3d
 

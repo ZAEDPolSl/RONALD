@@ -28,7 +28,7 @@ def separate_branch(image, endpoints):
     labeled_image = label(mask)
     label_at_point = labeled_image[tuple(endpoints[0])]
     branch_points = np.argwhere(labeled_image == label_at_point)
-    branch_points = densify_point_cloud(branch_points, factor=25)
+    branch_points = densify_point_cloud(branch_points, factor=50)
 
     svd = PCA(n_components=3)
     svd.fit(branch_points)
@@ -49,15 +49,11 @@ def separate_branch(image, endpoints):
     
     # Extract the corresponding original points
     points_same_as_first = transformed_points[mask_first]
-    print(points_same_as_first.shape)
     points_same_as_second = transformed_points[mask_second]
-    print(points_same_as_second.shape)
     
     ellipse1 = f_el(points_same_as_first, transformed_endpoints[0, :], svd)
-    print(ellipse1)
     ellipse2 = f_el(points_same_as_second, transformed_endpoints[1, :], svd)
-    print(ellipse2)
-    return [ellipse1, ellipse2]
+    return [ellipse1, ellipse2], svd
  
 
 def check_ellipse_convergence(ellipse, ellipse_constraint, eps=1e-10, to_higher=True):
@@ -108,10 +104,10 @@ def analyse_segment(points, ellipses, branch, indices=[0, -1], previous_oval=Non
     """
     ellipse1 = ellipses[0]
     ellipse2 = ellipses[1]
-    point1 = branch[indices[0]]
-    # plane_normal1 = branch[indices[0] + 1] - point1
-    point2 = branch[indices[-1]]
-    # plane_normal2 = point2 - branch[indices[-1] - 1]
+    # point1 = branch[indices[0]]
+    # # plane_normal1 = branch[indices[0] + 1] - point1
+    # point2 = branch[indices[-1]]
+    # # plane_normal2 = point2 - branch[indices[-1] - 1]
 
     # ellipse1 = find_ellipse(ellipse_fit_points, plane_normal1, point1)
     # print(ellipse1)
@@ -121,10 +117,10 @@ def analyse_segment(points, ellipses, branch, indices=[0, -1], previous_oval=Non
     ellipse1 = check_ellipse_convergence(ellipse1, ellipse2, eps=eps, to_higher=False)
 
 
-    if previous_oval is not None:
-        # check if the new ellipse is bigger than the previous one
-        ellipse1 = check_ellipse_convergence(ellipse1, previous_oval, eps=eps)
-        ellipse2 = check_ellipse_convergence(ellipse2, previous_oval, eps=eps)
+    # if previous_oval is not None:
+    #     # check if the new ellipse is bigger than the previous one
+    #     ellipse1 = check_ellipse_convergence(ellipse1, previous_oval, eps=eps)
+    #     ellipse2 = check_ellipse_convergence(ellipse2, previous_oval, eps=eps)
     inside_cylinder = is_point_in_cylinder(
         points,
         ellipse1[0], #point1,  # ellipse1[0],
@@ -168,9 +164,16 @@ def smooth_branch(branch, image, segments=False, previous_oval=None, eps=1e-10):
         indices = np.array([0, -1])
     # for each consecutive pair of indices, analyse the segment
     for i in range(len(indices) - 1):
-        ellipses = separate_branch(image, np.array([branch[indices[i]], branch[indices[i+1]]]))
+        if np.all(branch[indices[i]+1] == branch[indices[i+1]-1]):
+            start_idx = indices[i]
+            end_idx = indices[i+1]
+        else:
+            start_idx = indices[i] + 1
+            end_idx = indices[i+1] - 1
+        ellipses, svd = separate_branch(image, np.array([branch[start_idx], branch[end_idx]]))
+        transformed_points = svd.transform(points)
         inside_cylinder, previous_oval = analyse_segment(
-            points,
+            transformed_points,
             ellipses,
             branch,
             indices=indices[i : i + 2],
