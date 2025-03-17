@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.spatial import cKDTree
+from scipy.spatial import KDTree
 
 
 def densify_point_cloud(points: np.ndarray, factor=2) -> np.ndarray:
@@ -7,7 +7,7 @@ def densify_point_cloud(points: np.ndarray, factor=2) -> np.ndarray:
     Densify a point cloud by interpolating between close pairs of points.
     """
     # Build a KDTree for efficient neighbor searching
-    tree = cKDTree(points)
+    tree = KDTree(points)
 
     # Collect new points by interpolating between close pairs
     new_points = []
