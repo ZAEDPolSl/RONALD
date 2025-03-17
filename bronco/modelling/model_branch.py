@@ -10,31 +10,8 @@ from bronco.modelling.segment_branch import segment_branch
 
 
 def separate_branch(image, endpoints):
-    # checkpoints = np.argwhere(image == 1)
-    # # use the whole coordinate system
-    # branch_direction = endpoints[1] - endpoints[0]
-    # height = np.linalg.norm(branch_direction)
-    # axis_unit_vector = branch_direction / (height + 1e-10)
-
-    # # Project points onto cylinder's axis
-    # vector_to_points = checkpoints - endpoints[0]
-    # projection_lengths = np.dot(vector_to_points, axis_unit_vector)
-
-    # # Check if projections are within height bounds
-    # height_bounds_check = (0 <= projection_lengths) & (projection_lengths <= height)
-    # checkpoints_cut = checkpoints[height_bounds_check]
-    # mask = label_points(checkpoints_cut, image.shape).astype(bool).astype(int)
-    # labeled_image = label(mask)
-    # label_at_point = labeled_image[tuple(endpoints[0])]
-    # branch_points = np.argwhere(labeled_image == label_at_point)
     branch_points = np.argwhere(image==1)
 
-    
-    # from datetime import datetime
-    # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # filename = f"array_{timestamp}.csv"
-    # np.savetxt(filename, branch_points, delimiter=",")
-    print(branch_points.shape)
     branch_points = densify_point_cloud(branch_points, factor=50)
     svd = PCA(n_components=3)
     svd.fit(branch_points)
