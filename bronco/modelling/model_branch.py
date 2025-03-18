@@ -110,13 +110,13 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
     """
     smooth_cylinder = np.zeros(image.shape, dtype=int)
 
-    x, y, z = np.meshgrid(
-        np.arange(image.shape[0]),
-        np.arange(image.shape[1]),
-        np.arange(image.shape[2]),
-        indexing="ij",
-    )
-    points = np.column_stack((x.ravel(), y.ravel(), z.ravel()))
+    # x, y, z = np.meshgrid(
+    #     np.arange(image.shape[0]),
+    #     np.arange(image.shape[1]),
+    #     np.arange(image.shape[2]),
+    #     indexing="ij",
+    # )
+    # points = np.column_stack((x.ravel(), y.ravel(), z.ravel()))
 
     if segments:
         indices = segment_branch(branch)
@@ -133,6 +133,7 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
         ellipses, svd = separate_branch(
             image, np.array([branch[start_idx], branch[end_idx]])
         )
+        points = np.argwhere(image==1)
         transformed_points = svd.transform(points)
         inside_cylinder = analyse_segment(transformed_points, ellipses, eps=eps)
         # inside cylinder back to 3D
