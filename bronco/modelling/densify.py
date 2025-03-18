@@ -1,7 +1,6 @@
 import numpy as np
 from scipy.spatial import KDTree
 
-
 def densify_point_cloud(points: np.ndarray, factor=2) -> np.ndarray:
     """
     Densify a point cloud by interpolating between close pairs of points.
@@ -13,9 +12,11 @@ def densify_point_cloud(points: np.ndarray, factor=2) -> np.ndarray:
     new_points = []
     for point in points:
         # Find neighbors within a small distance (proximity threshold)
-        distances, neighbors = tree.query(point, k=10)  # Adjust k for more neighbors
+        distances, neighbors = tree.query(point, k=min(10, len(points)))  # Adjust k for the number of points
 
         for neighbor_idx in neighbors[1:]:  # Skip the point itself (first neighbor)
+            if neighbor_idx >= len(points):
+                continue  # Skip invalid indices
             neighbor = points[neighbor_idx]
             # Generate intermediate points between the current point and its neighbor
             for i in range(1, factor):
