@@ -77,10 +77,6 @@ def model_tree(bronco_mask):
             branch_mask = smooth_branch(edge_points, curr_mask)
             # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
-            # break
-        i += 1
-        if i == 2:
-            break
     # TODO: connect the branches
     return tree_mask.astype(int)
 
