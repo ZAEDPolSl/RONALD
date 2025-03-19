@@ -11,7 +11,6 @@ from bronco.modelling.segment_branch import segment_branch
 
 def separate_branch(image, endpoints):
     branch_points = np.argwhere(image==1)
-
     branch_points = densify_point_cloud(branch_points, factor=50)
     svd = PCA(n_components=3)
     svd.fit(branch_points)
@@ -26,7 +25,6 @@ def separate_branch(image, endpoints):
     tol = (transformed_points[:, 0].max() - transformed_points[:, 0].min()) / 100
     mask_first = np.isclose(transformed_points[:, 0], first_endpoint_value, atol=tol)
     mask_second = np.isclose(transformed_points[:, 0], second_endpoint_value, atol=tol)
-
     # Extract the corresponding original points
     points_same_as_first = transformed_points[mask_first]
     points_same_as_second = transformed_points[mask_second]
@@ -137,6 +135,9 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
         transformed_points = svd.transform(points)
         inside_cylinder = analyse_segment(transformed_points, ellipses, eps=eps)
         # inside cylinder back to 3D
-        inside_cylinder = inside_cylinder.reshape(image.shape)
-        smooth_cylinder = np.logical_or(smooth_cylinder, inside_cylinder)
+        # inside_cylinder = inside_cylinder.reshape(image.shape)
+        cyl = points[inside_cylinder]
+        cyl_mask = np.zeros(image.shape, dtype=int)
+        cyl_mask[cyl[:, 0], cyl[:, 1], cyl[:, 2]] = 1
+        smooth_cylinder = np.logical_or(smooth_cylinder, cyl_mask)
     return smooth_cylinder.astype(int)
