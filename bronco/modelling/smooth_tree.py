@@ -71,7 +71,7 @@ def model_tree(bronco_mask):
             # Extract coordinates
             coord1 = tuple(airways_graph.nodes()[node]["o"])
             coord2 = tuple(airways_graph.nodes()[neighbor]["o"])
-            
+
             # Set the corresponding points to 1 in the mask
             curr_mask[coord1] = 1
             curr_mask[coord2] = 1

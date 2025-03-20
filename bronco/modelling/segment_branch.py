@@ -8,7 +8,7 @@ from bronco.modelling.visvalingam import visvalingam_whyatt_3d
 def closest_edge_indices(branch, edge_list, tol=1e-6):
     min_distances = np.full(branch.shape[0], np.inf)
     min_edge_indices = np.full(branch.shape[0], -1)
-    
+
     # First pass: Exact coordinate matching
     for edge_idx, edge in enumerate(edge_list):
         # Create coordinate hash for fast lookups
@@ -18,7 +18,7 @@ def closest_edge_indices(branch, edge_list, tol=1e-6):
         # Force assignment for exact matches
         min_edge_indices[in_edge] = edge_idx
         min_distances[in_edge] = 0
-    
+
     # Second pass: Geometric proximity for non-exact matches
     kdtrees = [KDTree(edge) for edge in edge_list]
     for edge_idx, kdtree in tqdm(enumerate(kdtrees), total=len(kdtrees)):
@@ -27,7 +27,7 @@ def closest_edge_indices(branch, edge_list, tol=1e-6):
         update_mask = (dists < min_distances) & (min_distances > tol)
         min_distances[update_mask] = dists[update_mask]
         min_edge_indices[update_mask] = edge_idx
-    
+
     return min_edge_indices
 
 
@@ -48,12 +48,14 @@ def segment_branch(branch: np.ndarray) -> np.ndarray:
     indices = np.where(np.isin(branch, points).all(axis=1))[0]
     return indices
 
+
 def assign_edge_number(graph):
     edge_list = []
     for u, v, data in graph.edges(data=True):
         edge_list.append(np.array(graph.edges[u, v]["pts"]))
         graph.edges[u, v]["mask"] = len(edge_list)
     return edge_list, graph
+
 
 def assign_branch(image, graph):
     edge_list, graph = assign_edge_number(graph)
@@ -63,6 +65,7 @@ def assign_branch(image, graph):
     # Create a new image mask with the same shape as the input image
     new_image = np.zeros_like(image, dtype=int)
     # Vectorized assignment to the new_image array
-    new_image[checkpoints[:, 0], checkpoints[:, 1], checkpoints[:, 2]] = edge_indices + 1
+    new_image[checkpoints[:, 0], checkpoints[:, 1], checkpoints[:, 2]] = (
+        edge_indices + 1
+    )
     return new_image, graph
-    

@@ -8,16 +8,18 @@ def are_points_collinear(points):
     # Ensure there are at least 3 points to check
     if len(points) < 3:
         return True  # Two points or fewer are always collinear
-    
+
     # Take the first two points as reference
     p1 = points[0]
     p2 = points[1]
-    
+
     # Check cross product for all subsequent points
     for i in range(2, len(points)):
         p3 = points[i]
         # Compute cross product of vectors (p2 - p1) and (p3 - p1)
-        cross_product = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0])
+        cross_product = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (
+            p3[0] - p1[0]
+        )
         if cross_product != 0:
             return False  # Points are not collinear
     return True

@@ -8,6 +8,7 @@ from bronco.modelling.densify import densify_point_cloud
 from bronco.modelling.ellipse import find_ellipse as f_el
 from bronco.modelling.segment_branch import segment_branch
 
+
 def between_endpoints(points, c1, c2, eps=1e-10):
     # Compute cylinder axis vector and normalize
     axis_vector = c2 - c1
@@ -22,17 +23,18 @@ def between_endpoints(points, c1, c2, eps=1e-10):
     height_bounds_check = (0 <= projection_lengths) & (projection_lengths <= height)
     return points[height_bounds_check]
 
+
 def separate_branch(image, endpoints, segments=False):
-    branch_points = np.argwhere(image==1)
+    branch_points = np.argwhere(image == 1)
     branch_points = densify_point_cloud(branch_points, factor=50)
     svd = PCA(n_components=3)
     svd.fit(branch_points)
     transformed_points = svd.transform(branch_points)
     transformed_endpoints = svd.transform(endpoints)
     if segments:
-        transformed_points = between_endpoints(transformed_points,
-                                               transformed_endpoints[0,:],
-                                               transformed_endpoints[1,:])
+        transformed_points = between_endpoints(
+            transformed_points, transformed_endpoints[0, :], transformed_endpoints[1, :]
+        )
 
     # Extract the first principal component values of endpoints
     first_endpoint_value = transformed_endpoints[0, 0]  # First endpoint on first axis
@@ -139,15 +141,19 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
         indices = np.array([0, -1])
     # for each consecutive pair of indices, analyse the segment
     for i in range(len(indices) - 1):
-        if np.all(branch[indices[i] + 1] == branch[indices[i + 1] - 1]) or indices[i] != 0:
+        if (
+            np.all(branch[indices[i] + 1] == branch[indices[i + 1] - 1])
+            or indices[i] != 0
+        ):
             start_idx = indices[i]
             end_idx = indices[i + 1]
         else:
             start_idx = indices[i] + 1
             end_idx = indices[i + 1] - 1
         ellipses, svd = separate_branch(
-            image, np.array([branch[start_idx], branch[end_idx]]), segments)
-        points = np.argwhere(image==1)
+            image, np.array([branch[start_idx], branch[end_idx]]), segments
+        )
+        points = np.argwhere(image == 1)
         transformed_points = svd.transform(points)
         inside_cylinder = analyse_segment(transformed_points, ellipses, eps=eps)
         # inside cylinder back to 3D
