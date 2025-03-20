@@ -55,7 +55,13 @@ def create_thresholded_volumes(thresholds, image_seg_volume):
     return image_thresholded
 
 
-def run_thresholding(sitk_image, sitk_mask=None, path_cache=None, number_of_gmms=3, return_thresholds=True):
+def run_thresholding(
+    sitk_image,
+    sitk_mask=None,
+    path_cache=None,
+    number_of_gmms=3,
+    return_thresholds=True,
+):
     # segment the lung area
     if sitk_mask is not None:
         # get min
@@ -96,13 +102,9 @@ def run_thresholding(sitk_image, sitk_mask=None, path_cache=None, number_of_gmms
     thresholds.insert(0, np.min(image) - 1)
     thresholds.append(np.max(image) + 1)
 
-    thresholds_df = pd.DataFrame(
-        data=np.array(thresholds), columns=["threshold"]
-    )
+    thresholds_df = pd.DataFrame(data=np.array(thresholds), columns=["threshold"])
     if path_cache is not None:
-        thresholds_df.to_csv(
-            os.path.join(path_cache, "thresholds.csv"), index=False
-        )
+        thresholds_df.to_csv(os.path.join(path_cache, "thresholds.csv"), index=False)
 
     # print("Generating thresholded volumes...")
     segments = create_thresholded_volumes(thresholds, image)

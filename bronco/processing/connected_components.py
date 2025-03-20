@@ -5,6 +5,7 @@ import SimpleITK as sitk
 
 def convex_hull_3d(sitk_mask):
     from skimage.morphology import convex_hull_image
+
     # closing
     closing = sitk.BinaryMorphologicalClosingImageFilter()
     sitk_segmentation = closing.Execute(sitk_mask)
@@ -27,10 +28,14 @@ def find_largest_connected_component(image):
     stats_filter.Execute(labeled_image)
 
     # Find the label with the largest size
-    max_label = max(stats_filter.GetLabels(), key=lambda x: stats_filter.GetPhysicalSize(x))
+    max_label = max(
+        stats_filter.GetLabels(), key=lambda x: stats_filter.GetPhysicalSize(x)
+    )
 
     # Create a binary mask for the largest connected component
-    largest_component_mask = sitk.BinaryThreshold(labeled_image, lowerThreshold=max_label, upperThreshold=max_label)
+    largest_component_mask = sitk.BinaryThreshold(
+        labeled_image, lowerThreshold=max_label, upperThreshold=max_label
+    )
 
     return largest_component_mask
 
@@ -40,7 +45,9 @@ def find_most_similar_connected_component(target_image, reference_mask):
 
     target_connected_components = sitk.ConnectedComponent(target_image)
 
-    target_connected_components_mask = target_connected_components * sitk.Cast(reference_mask, sitk.sitkUInt32)
+    target_connected_components_mask = target_connected_components * sitk.Cast(
+        reference_mask, sitk.sitkUInt32
+    )
 
     max_iou = 0
     most_similar_component = None
@@ -49,7 +56,9 @@ def find_most_similar_connected_component(target_image, reference_mask):
 
     for label in tqdm(list_uniques):
         label = int(label)
-        target_component = sitk.BinaryThreshold(target_connected_components, label, label)
+        target_component = sitk.BinaryThreshold(
+            target_connected_components, label, label
+        )
         target_component_array = sitk.GetArrayFromImage(target_component)
 
         iou = calculate_iou(target_component_array, reference_array)
@@ -70,5 +79,7 @@ def calculate_iou(segmentation1, segmentation2):
 
 def calculate_dice(segmentation1, segmentation2):
     intersection = np.logical_and(segmentation1, segmentation2)
-    dice_coefficient = 2 * np.sum(intersection) / (np.sum(segmentation1) + np.sum(segmentation2))
+    dice_coefficient = (
+        2 * np.sum(intersection) / (np.sum(segmentation1) + np.sum(segmentation2))
+    )
     return dice_coefficient

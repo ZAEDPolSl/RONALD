@@ -1,14 +1,15 @@
 import numpy as np
 import SimpleITK as sitk
-from skimage.morphology import skeletonize_3d
+from skimage.morphology import skeletonize
 from tqdm import tqdm
 from bronco.external.sknw import build_sknw
 from bronco.modelling.model_branch import smooth_branch
+from bronco.modelling.segment_branch import assign_branch
 
 
 def get_skeleton(mask):
     airways = sitk.GetArrayFromImage(mask)
-    skeleton = skeletonize_3d(airways)
+    skeleton = skeletonize(airways)
     skeleton = skeleton.astype(int)
     sitk_skeleton = sitk.GetImageFromArray(skeleton)
     sitk_skeleton.CopyInformation(mask)
@@ -49,13 +50,14 @@ def model_tree(bronco_mask):
     bronco_mask_arr = sitk.GetArrayFromImage(bronco_mask)
     tree_mask = np.zeros_like(bronco_mask_arr)
     node_order = get_node_order(airways_graph)
-    max_oval = {node: None for node in node_order}
+    # define branch_mask and get modified airways_graph
+    branches_mask, airways_graph = assign_branch(bronco_mask_arr, airways_graph)
+    # np.save("branch_mask_try.npy", branches_mask)
     for node in tqdm(node_order):
         for neighbor in airways_graph.neighbors(node):
             # if neighbor is before node in node_order, then it was already processed
             if node_order.index(neighbor) < node_order.index(node):
                 continue
-            current_oval = max_oval[node]
             # get the edge between node and neighbor
             edge = airways_graph.get_edge_data(node, neighbor)
             # get the points in the edge
@@ -64,15 +66,19 @@ def model_tree(bronco_mask):
             if not (edge_points[0] == airways_graph.nodes()[node]["o"]).all():
                 edge_points = edge_points[::-1]
             # smooth the branch
-            branch_mask, lower_oval = smooth_branch(
-                edge_points, bronco_mask_arr, previous_oval=current_oval
-            )
-            # update the max_oval
-            max_oval[neighbor] = lower_oval
+            current_branch_mask = edge["mask"]
+            curr_mask = (branches_mask == current_branch_mask).astype(int)
+            # Extract coordinates
+            coord1 = tuple(airways_graph.nodes()[node]["o"])
+            coord2 = tuple(airways_graph.nodes()[neighbor]["o"])
+
+            # Set the corresponding points to 1 in the mask
+            curr_mask[coord1] = 1
+            curr_mask[coord2] = 1
+            # branch_mask = smooth_branch(edge_points, bronco_mask_arr)
+            branch_mask = smooth_branch(edge_points, curr_mask)
             # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
-            break
-        break
     # TODO: connect the branches
     return tree_mask.astype(int)
 
