@@ -43,7 +43,7 @@ def segment_branch(branch: np.ndarray) -> np.ndarray:
     np.ndarray
         A 1D array of indices of the points that were kept.
     """
-    points = visvalingam_whyatt_3d(branch, 8.0)
+    points = visvalingam_whyatt_3d(branch, 15.0)
     # get the indices of the points that were kept
     indices = np.where(np.isin(branch, points).all(axis=1))[0]
     return indices

@@ -53,7 +53,6 @@ def model_tree(bronco_mask):
     # define branch_mask and get modified airways_graph
     branches_mask, airways_graph = assign_branch(bronco_mask_arr, airways_graph)
     # np.save("branch_mask_try.npy", branches_mask)
-    i = 0
     for node in tqdm(node_order):
         for neighbor in airways_graph.neighbors(node):
             # if neighbor is before node in node_order, then it was already processed
