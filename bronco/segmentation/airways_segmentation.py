@@ -8,7 +8,7 @@ from skimage.filters import sato
 from skimage.measure import label
 from scipy.ndimage.morphology import binary_fill_holes
 
-from skimage.morphology import skeletonize_3d
+from skimage.morphology import skeletonize
 
 from bronco.utils import display
 from bronco.external.sknw import build_sknw
@@ -34,7 +34,7 @@ def fast_marching(sitk_init, seed_point, stopping_value=60):
         fast_marching.AddTrialPoint(
             [seed_point[2], seed_point[1], seed_point[0]]
         )  # COS SITK !!!!
-    fast_marching.SetStoppingValue(stopping_value)
+    fast_marching.SetStoppingValue(20)
     sitk_fast_marching = fast_marching.Execute(sitk_init)
 
     sitk_fast_marching = (
@@ -176,7 +176,7 @@ def sato_filter(sitk_image, sigmas=(0.5, 1, 2, 3, 5), thr=0.025):
 
 def get_top_node(sitk_trachea):
     trachea = sitk.GetArrayFromImage(sitk_trachea)
-    skeleton = skeletonize_3d(trachea)
+    skeleton = skeletonize(trachea)
     sitk_skeleton = sitk.GetImageFromArray(skeleton)
     sitk_skeleton.CopyInformation(sitk_trachea)
     _sitk_skeleton = sitk.BinaryFillhole(sitk.Cast(sitk_skeleton > 0, sitk.sitkUInt8))
