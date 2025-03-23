@@ -125,7 +125,7 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
     Returns:
         smooth_branch: numpy array of shape (I, J, K) - 3D binary image
     """
-    smooth_cylinder = np.zeros(image.shape, dtype=int)
+    best_cylinder = np.zeros(image.shape, dtype=int)
 
     # x, y, z = np.meshgrid(
     #     np.arange(image.shape[0]),
@@ -136,30 +136,36 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
     # points = np.column_stack((x.ravel(), y.ravel(), z.ravel()))
 
     if segments:
-        indices = segment_branch(branch)
+        indices_options = segment_branch(branch, adaptive=True)
     else:
-        indices = np.array([0, -1])
+        indices_options = [np.array([0, -1])]
     # for each consecutive pair of indices, analyse the segment
-    for i in range(len(indices) - 1):
-        if (
-            np.all(branch[indices[i] + 1] == branch[indices[i + 1] - 1])
-            or indices[i] != 0
-        ):
-            start_idx = indices[i]
-            end_idx = indices[i + 1]
-        else:
-            start_idx = indices[i] + 1
-            end_idx = indices[i + 1] - 1
-        ellipses, svd = separate_branch(
-            image, np.array([branch[start_idx], branch[end_idx]]), segments
-        )
-        points = np.argwhere(image == 1)
-        transformed_points = svd.transform(points)
-        inside_cylinder = analyse_segment(transformed_points, ellipses, eps=eps)
-        # inside cylinder back to 3D
-        # inside_cylinder = inside_cylinder.reshape(image.shape)
-        cyl = points[inside_cylinder]
-        cyl_mask = np.zeros(image.shape, dtype=int)
-        cyl_mask[cyl[:, 0], cyl[:, 1], cyl[:, 2]] = 1
-        smooth_cylinder = np.logical_or(smooth_cylinder, cyl_mask)
-    return smooth_cylinder.astype(int)
+    for indices in indices_options:
+        smooth_cylinder = np.zeros(image.shape, dtype=int)
+        for i in range(len(indices) - 1):
+            if (
+                np.all(branch[indices[i] + 1] == branch[indices[i + 1] - 1])
+                or indices[i] != 0
+            ):
+                start_idx = indices[i]
+                end_idx = indices[i + 1]
+            else:
+                start_idx = indices[i] + 1
+                end_idx = indices[i + 1] - 1
+            ellipses, svd = separate_branch(
+                image, np.array([branch[start_idx], branch[end_idx]]), segments
+            )
+            points = np.argwhere(image == 1)
+            transformed_points = svd.transform(points)
+            inside_cylinder = analyse_segment(transformed_points, ellipses, eps=eps)
+            # inside cylinder back to 3D
+            # inside_cylinder = inside_cylinder.reshape(image.shape)
+            cyl = points[inside_cylinder]
+            cyl_mask = np.zeros(image.shape, dtype=int)
+            cyl_mask[cyl[:, 0], cyl[:, 1], cyl[:, 2]] = 1
+            
+            smooth_cylinder = np.logical_or(smooth_cylinder, cyl_mask)
+        if np.sum(smooth_cylinder) > np.sum(best_cylinder):
+            best_cylinder = smooth_cylinder
+        else: break
+    return best_cylinder.astype(int)

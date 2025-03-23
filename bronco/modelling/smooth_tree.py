@@ -76,7 +76,7 @@ def model_tree(bronco_mask):
             curr_mask[coord1] = 1
             curr_mask[coord2] = 1
             # branch_mask = smooth_branch(edge_points, bronco_mask_arr)
-            branch_mask = smooth_branch(edge_points, curr_mask)
+            branch_mask = smooth_branch(edge_points, curr_mask, True)
             # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
     # TODO: connect the branches

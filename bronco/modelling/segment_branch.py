@@ -31,22 +31,42 @@ def closest_edge_indices(branch, edge_list, tol=1e-6):
     return min_edge_indices
 
 
-def segment_branch(branch: np.ndarray) -> np.ndarray:
-    """Segment a branch by using Visvalingam-Whyatt algorithm.
+def segment_branch(branch: np.ndarray, adaptive=False) -> list:
+    """Segment a branch by using the Visvalingam-Whyatt algorithm.
 
     Parameters
     ----------
     branch : np.ndarray
         A 2D array of shape (n_points, 3) representing the branch.
+    adaptive : bool, optional
+        Whether to use adaptive segmentation (default is False).
+
     Returns
     -------
-    np.ndarray
-        A 1D array of indices of the points that were kept.
+    list
+        A list of 1D numpy arrays of indices of the points that were kept.
     """
-    points = visvalingam_whyatt_3d(branch, 10.0)
-    # get the indices of the points that were kept
-    indices = np.where(np.isin(branch, points).all(axis=1))[0]
-    return indices
+    indices_all = []
+
+    def add_unique(indices):
+        # Check if the current numpy array is already in the list
+        if not any(np.array_equal(indices, existing) for existing in indices_all):
+            indices_all.append(indices)
+
+    if adaptive:
+        add_unique(np.array([0, len(branch) - 1]))  # Add first and last point indices
+
+        for area in [10.0, 5.0]:
+            points = visvalingam_whyatt_3d(branch, area)
+            # Get the indices of the points that were kept
+            indices = np.where(np.isin(branch, points).all(axis=1))[0]
+            add_unique(indices)
+    else:
+        points = visvalingam_whyatt_3d(branch, 10.0)
+        # Get the indices of the points that were kept
+        indices = np.where(np.isin(branch, points).all(axis=1))[0]
+        add_unique(indices)
+    return indices_all
 
 
 def assign_edge_number(graph):
