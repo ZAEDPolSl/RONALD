@@ -28,7 +28,7 @@ def closest_edge_indices(branch, edge_list, tol=1e-6):
         min_distances[update_mask] = dists[update_mask]
         min_edge_indices[update_mask] = edge_idx
 
-    return min_edge_indices
+    return min_edge_indices, min_distances
 
 
 def segment_branch(branch: np.ndarray, adaptive=False) -> list:
@@ -56,7 +56,7 @@ def segment_branch(branch: np.ndarray, adaptive=False) -> list:
     if adaptive:
         add_unique(np.array([0, len(branch) - 1]))  # Add first and last point indices
 
-        for area in [10.0, 5.0]:
+        for area in [30.0, 15.0, 10.0, 5.0, 2.0]:
             points = visvalingam_whyatt_3d(branch, area)
             # Get the indices of the points that were kept
             indices = np.where(np.isin(branch, points).all(axis=1))[0]
@@ -81,11 +81,29 @@ def assign_branch(image, graph):
     edge_list, graph = assign_edge_number(graph)
     checkpoints = np.argwhere(image == 1)
     # assign the branch to checkpoints
-    edge_indices = closest_edge_indices(checkpoints, edge_list)
+    edge_indices, min_distances = closest_edge_indices(checkpoints, edge_list)
     # Create a new image mask with the same shape as the input image
     new_image = np.zeros_like(image, dtype=int)
+    min_dist_img = np.zeros_like(image, dtype=int)
     # Vectorized assignment to the new_image array
     new_image[checkpoints[:, 0], checkpoints[:, 1], checkpoints[:, 2]] = (
         edge_indices + 1
     )
-    return new_image, graph
+    min_dist_img[checkpoints[:, 0], checkpoints[:, 1], checkpoints[:, 2]] = min_distances
+    normalized_min_dist_img = np.zeros_like(min_dist_img, dtype=np.float32)
+    # Get unique labels excluding zero
+    unique_labels = np.unique(new_image)
+    unique_labels = unique_labels[unique_labels != 0]  # Exclude zero
+
+    # Normalize each label separately
+    for label in unique_labels:
+        mask = new_image == label  # Get mask for current label
+        max_val = np.median(min_dist_img[mask])  # Find max distance for this label
+        
+        if max_val > 0:  # Avoid division by zero
+            normalized_min_dist_img[mask] = min_dist_img[mask] / max_val
+    
+    # Keep zeros unchanged
+    normalized_min_dist_img[new_image == 0] = 0
+
+    return new_image, graph, normalized_min_dist_img

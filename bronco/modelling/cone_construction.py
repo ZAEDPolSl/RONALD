@@ -75,10 +75,10 @@ def is_point_in_cylinder(
 
     # Project local vectors onto the unit major and minor axes
     major_projections = (
-        np.einsum("ij,ij->i", local_vectors, major_unit) / semi_major_length
+        np.einsum("ij,ij->i", local_vectors, major_unit) / (semi_major_length + eps)
     )
     minor_projections = (
-        np.einsum("ij,ij->i", local_vectors, minor_unit) / semi_minor_length
+        np.einsum("ij,ij->i", local_vectors, minor_unit) / (semi_minor_length + eps)
     )
 
     # Ellipse equation check

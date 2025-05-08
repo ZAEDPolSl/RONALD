@@ -24,13 +24,14 @@ def between_endpoints(points, c1, c2, eps=1e-10):
     return points[height_bounds_check]
 
 
-def separate_branch(image, endpoints, segments=False):
-    branch_points = np.argwhere(image == 1)
-    branch_points = densify_point_cloud(branch_points, factor=50)
+def prepare_branch_svd(points):
+    branch_points = densify_point_cloud(points, factor=50)
     svd = PCA(n_components=3)
     svd.fit(branch_points)
     transformed_points = svd.transform(branch_points)
-    transformed_endpoints = svd.transform(endpoints)
+    return svd, transformed_points
+
+def separate_branch(transformed_points, transformed_endpoints, segments=False):
     if segments:
         transformed_points = between_endpoints(
             transformed_points, transformed_endpoints[0, :], transformed_endpoints[1, :]
@@ -49,7 +50,7 @@ def separate_branch(image, endpoints, segments=False):
     points_same_as_second = transformed_points[mask_second]
     ellipse1 = f_el(points_same_as_first, transformed_endpoints[0, :])
     ellipse2 = f_el(points_same_as_second, transformed_endpoints[1, :])
-    return [ellipse1, ellipse2], svd
+    return [ellipse1, ellipse2]
 
 
 def check_ellipse_convergence(ellipse, ellipse_constraint, eps=1e-10, to_higher=True):
@@ -135,6 +136,11 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
     # )
     # points = np.column_stack((x.ravel(), y.ravel(), z.ravel()))
 
+    points = np.argwhere(image == 1)
+    # prev_points = np.argwhere(image == 2)
+    svd, densified_points =  prepare_branch_svd(points)
+    transformed_points = svd.transform(points)
+
     if segments:
         indices_options = segment_branch(branch, adaptive=True)
     else:
@@ -152,20 +158,21 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
             else:
                 start_idx = indices[i] + 1
                 end_idx = indices[i + 1] - 1
-            ellipses, svd = separate_branch(
-                image, np.array([branch[start_idx], branch[end_idx]]), segments
-            )
-            points = np.argwhere(image == 1)
-            transformed_points = svd.transform(points)
+
+            transformed_endpoints = svd.transform(np.array([branch[start_idx], branch[end_idx]]))
+            ellipses = separate_branch(densified_points, transformed_endpoints, segments)
+
             inside_cylinder = analyse_segment(transformed_points, ellipses, eps=eps)
-            # inside cylinder back to 3D
-            # inside_cylinder = inside_cylinder.reshape(image.shape)
-            cyl = points[inside_cylinder]
+            # ellipses 0 and previous ellipse
+            # previous ellipse is in a different coordinate system - get the lower ellipse indices beforehand from svd and then use in og coord system
+            cyl = points[inside_cylinder]     
             cyl_mask = np.zeros(image.shape, dtype=int)
             cyl_mask[cyl[:, 0], cyl[:, 1], cyl[:, 2]] = 1
-            
             smooth_cylinder = np.logical_or(smooth_cylinder, cyl_mask)
         if np.sum(smooth_cylinder) > np.sum(best_cylinder):
             best_cylinder = smooth_cylinder
+            best_cyl = cyl
+        elif np.sum(smooth_cylinder) == 0:
+            continue
         else: break
     return best_cylinder.astype(int)

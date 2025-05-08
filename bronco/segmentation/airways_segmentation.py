@@ -34,7 +34,7 @@ def fast_marching(sitk_init, seed_point, stopping_value=60):
         fast_marching.AddTrialPoint(
             [seed_point[2], seed_point[1], seed_point[0]]
         )  # COS SITK !!!!
-    fast_marching.SetStoppingValue(20)
+    fast_marching.SetStoppingValue(stopping_value)
     sitk_fast_marching = fast_marching.Execute(sitk_init)
 
     sitk_fast_marching = (
@@ -321,4 +321,4 @@ def airways_segmentation(
 
     # sitk_airways = sitk_airways + 2 * sitk_walls
 
-    return sitk_airways, sitk_walls, sitk_trachea, sitk_vessels
+    return sitk_airways, sitk_walls, sitk_trachea #, sitk_vessels
