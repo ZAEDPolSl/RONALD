@@ -1,62 +1,70 @@
 import itk
+import numpy as np
 import SimpleITK as sitk
 
-
-def sitk_to_itk(sitk_image):
-    """Convert SimpleITK image to ITK image."""
-    array = sitk.GetArrayFromImage(sitk_image)
-    itk_image = itk.image_view_from_array(array)
-    itk_image.SetSpacing(sitk_image.GetSpacing())
-    itk_image.SetOrigin(sitk_image.GetOrigin())
-    itk_image.SetDirection(sitk_image.GetDirection())
-    return itk_image
-
-
-def itk_to_sitk(itk_image):
-    """Convert ITK image (including vector images) to SimpleITK."""
-    # Get numpy array from itk image
-    array = itk.GetArrayViewFromImage(itk_image)
-    # ITK vector images have shape: [depth, height, width, components]
-    # For 3D images, shape is (z,y,x,components)
-    # SimpleITK expects components as the last dimension too
-    sitk_image = sitk.GetImageFromArray(array, isVector=True)
-    sitk_image.SetSpacing(itk_image.GetSpacing())
-    sitk_image.SetOrigin(itk_image.GetOrigin())
-    sitk_image.SetDirection(itk_image.GetDirection())
-    return sitk_image
+from bronco.external.sitk2itk import (
+    ConvertItkImageToSimpleItkImage,
+    ConvertSimpleItkImageToItkImage,
+)
 
 
 def vessel_segmentation(sitk_image, sitk_lungs):
-    stats = sitk.StatisticsImageFilter()
-    stats.Execute(sitk_image)
-    _min = stats.GetMinimum()
-    # get lungs image
-    sitk_image = sitk.Mask(sitk_image, sitk_lungs, outsideValue=_min - 1)
-
     sigma = 1.0
     alpha1 = 0.5
     alpha2 = 2.0
 
-    itk_image = sitk_to_itk(sitk_image)
+    float_sitk = sitk.Cast(sitk_image, sitk.sitkFloat32)
+    itk_image = ConvertSimpleItkImageToItkImage(float_sitk, itk.F)
+    itk_lungs = ConvertSimpleItkImageToItkImage(sitk_lungs, itk.F)
+
+    itk_image = itk.cast_image_filter(
+        itk_image, ttype=[type(itk_image), itk.Image[itk.F, 3]]
+    )
+    itk_lungs = itk.cast_image_filter(
+        itk_lungs, ttype=[type(itk_lungs), itk.Image[itk.F, 3]]
+    )
+
+    multiply_filter = itk.MultiplyImageFilter[
+        itk.Image[itk.F, 3], itk.Image[itk.F, 3], itk.Image[itk.F, 3]
+    ].New()
+    multiply_filter.SetInput1(itk_image)
+    multiply_filter.SetInput2(itk_lungs)
+    masked_image = multiply_filter.GetOutput()
+
+    # Convert to float for further processing if needed
+    input_image_float = itk.cast_image_filter(
+        masked_image, ttype=[type(masked_image), itk.Image[itk.F, 3]]
+    )
 
     # Compute Hessian with ITK
-    hessian_filter = itk.HessianRecursiveGaussianImageFilter.New(itk_image)
-    hessian_filter.SetSigma(sigma)
-    hessian_filter.Update()
-    hessian_itk = hessian_filter.GetOutput()
+    hessian_image = itk.hessian_recursive_gaussian_image_filter(
+        input_image_float, sigma=sigma
+    )
+    vesselness_filter = itk.Hessian3DToVesselnessMeasureImageFilter[
+        itk.ctype("float")
+    ].New()
+    vesselness_filter.SetInput(hessian_image)
+    vesselness_filter.SetAlpha1(alpha1)
+    vesselness_filter.SetAlpha2(alpha2)
+    itk_output = vesselness_filter.GetOutput()
 
+    multiply_filter = itk.MultiplyImageFilter[
+        itk.Image[itk.F, 3], itk.Image[itk.F, 3], itk.Image[itk.F, 3]
+    ].New()
+    multiply_filter.SetInput1(itk_output)
+    multiply_filter.SetInput2(itk_lungs)
+    multiply_filter.Update()
+    output_image = multiply_filter.GetOutput()
+
+    threshold_filter = itk.BinaryThresholdImageFilter[
+        itk.Image[itk.F, 3], itk.Image[itk.UC, 3]
+    ].New()
+    threshold_filter.SetInput(output_image)
+    threshold_filter.SetLowerThreshold(30)
+    threshold_filter.SetOutsideValue(0)
+    threshold_filter.SetInsideValue(255)
+    output_image = threshold_filter.GetOutput()
     # Convert Hessian ITK image back to SimpleITK
-    hessian_sitk = itk_to_sitk(hessian_itk)
-
-    vesselness_filter = sitk.HessianToObjectnessMeasureImageFilter()
-    vesselness_filter.SetObjectDimension(1)
-    vesselness_filter.SetBrightObject(True)
-    vesselness_filter.SetAlpha(alpha1)
-    vesselness_filter.SetBeta(alpha2)
-    vesselness_filter.SetGamma(5.0)
-    vesselness_image = vesselness_filter.Execute(hessian_sitk)
-    masked_vesselness = sitk.Mask(vesselness_image, sitk_lungs)
-    # Threshold the vesselness image to create a binary mask
-    threshold = 0.3
-    binary_vesselness = sitk.BinaryThreshold(masked_vesselness, threshold, 255)
-    return binary_vesselness
+    direction = float_sitk.GetDirection()
+    sitk_vessels = ConvertItkImageToSimpleItkImage(output_image, 8, direction)
+    return sitk_vessels
