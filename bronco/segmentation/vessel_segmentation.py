@@ -29,13 +29,12 @@ def vessel_segmentation(sitk_image, sitk_lungs):
     ].New()
     multiply_filter.SetInput1(itk_image)
     multiply_filter.SetInput2(itk_lungs)
+    multiply_filter.Update()
     masked_image = multiply_filter.GetOutput()
-
     # Convert to float for further processing if needed
     input_image_float = itk.cast_image_filter(
         masked_image, ttype=[type(masked_image), itk.Image[itk.F, 3]]
     )
-
     # Compute Hessian with ITK
     hessian_image = itk.hessian_recursive_gaussian_image_filter(
         input_image_float, sigma=sigma
@@ -46,6 +45,7 @@ def vessel_segmentation(sitk_image, sitk_lungs):
     vesselness_filter.SetInput(hessian_image)
     vesselness_filter.SetAlpha1(alpha1)
     vesselness_filter.SetAlpha2(alpha2)
+    vesselness_filter.Update()
     itk_output = vesselness_filter.GetOutput()
 
     multiply_filter = itk.MultiplyImageFilter[
@@ -63,6 +63,7 @@ def vessel_segmentation(sitk_image, sitk_lungs):
     threshold_filter.SetLowerThreshold(30)
     threshold_filter.SetOutsideValue(0)
     threshold_filter.SetInsideValue(255)
+    threshold_filter.Update()
     output_image = threshold_filter.GetOutput()
     # Convert Hessian ITK image back to SimpleITK
     direction = float_sitk.GetDirection()
