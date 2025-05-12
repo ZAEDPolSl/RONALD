@@ -162,9 +162,8 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
             transformed_endpoints = svd.transform(np.array([branch[start_idx], branch[end_idx]]))
             ellipses = separate_branch(densified_points, transformed_endpoints, segments)
 
-            inside_cylinder = analyse_segment(transformed_points, ellipses, eps=eps)
-            # ellipses 0 and previous ellipse
-            # previous ellipse is in a different coordinate system - get the lower ellipse indices beforehand from svd and then use in og coord system
+            inside_cylinder, on_first_base, on_second_base = analyse_segment(transformed_points, ellipses, eps=eps)
+
             cyl = points[inside_cylinder]     
             cyl_mask = np.zeros(image.shape, dtype=int)
             cyl_mask[cyl[:, 0], cyl[:, 1], cyl[:, 2]] = 1
@@ -172,6 +171,8 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
         if np.sum(smooth_cylinder) > np.sum(best_cylinder):
             best_cylinder = smooth_cylinder
             best_cyl = cyl
+            first_base = points[on_first_base]
+            second_base = points[on_second_base]
         elif np.sum(smooth_cylinder) == 0:
             continue
         else: break

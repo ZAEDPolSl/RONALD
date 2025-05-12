@@ -87,7 +87,10 @@ def is_point_in_cylinder(
     # Final result: inside the cylinder if within height bounds and inside the ellipse
     inside_cylinder = height_bounds_check & ellipse_checks
 
-    return inside_cylinder
+    on_first_base = inside_cylinder & (np.abs(projection_lengths) <= eps)
+    on_second_base = inside_cylinder & (np.abs(projection_lengths - height) <= eps)
+
+    return inside_cylinder, on_first_base, on_second_base
 
 
 if __name__ == "__main__":
