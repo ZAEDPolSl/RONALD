@@ -1,10 +1,11 @@
 import numpy as np
 import SimpleITK as sitk
-from skimage.morphology import skeletonize, closing, ball
+from skimage.morphology import skeletonize
 from tqdm import tqdm
 from bronco.external.sknw import build_sknw
 from bronco.modelling.model_branch import smooth_branch
 from bronco.modelling.segment_branch import assign_branch
+from bronco.modelling.fill_gaps import fill_gaps
 
 
 def get_skeleton(mask):
@@ -49,6 +50,7 @@ def model_tree(bronco_mask):
     airways_graph = get_skeleton(bronco_mask)
     bronco_mask_arr = sitk.GetArrayFromImage(bronco_mask)
     tree_mask = np.zeros_like(bronco_mask_arr)
+    smooth_mask = np.zeros_like(bronco_mask_arr)
     node_order = get_node_order(airways_graph)
     # define branch_mask and get modified airways_graph
     branches_mask, airways_graph, min_dist_img = assign_branch(
@@ -91,17 +93,18 @@ def model_tree(bronco_mask):
             # points down should be assigned to the lower node
             airways_graph.nodes()[neighbor]["ellipse"] = points_down
             prev_down = airways_graph.nodes()[node]["ellipse"]
-
-            # points up - use with points down of the upper node
+            smooth_mask = fill_gaps(points_up, prev_down, smooth_mask)
             tree_mask = np.logical_or(tree_mask, branch_mask)
-    return tree_mask.astype(int)
+    return tree_mask.astype(int), smooth_mask.astype(int)
 
 
 def smooth_tree(bronco_mask):
-    tree_mask = model_tree(bronco_mask)
+    tree_mask, smooth_mask = model_tree(bronco_mask)
     sitk_tree_mask = sitk.GetImageFromArray(tree_mask)
     sitk_tree_mask = sitk.Cast(sitk_tree_mask, sitk.sitkUInt16)
     sitk_tree_mask.CopyInformation(bronco_mask)
 
-    sitk_smoothed_tree = sitk_tree_mask
+    sitk_smoothed_tree = sitk.GetImageFromArray(smooth_mask)
+    sitk_smoothed_tree = sitk.Cast(sitk_smoothed_tree, sitk.sitkUInt16)
+    sitk_smoothed_tree.CopyInformation(bronco_mask)
     return sitk_smoothed_tree, sitk_tree_mask
