@@ -51,7 +51,9 @@ def model_tree(bronco_mask):
     tree_mask = np.zeros_like(bronco_mask_arr)
     node_order = get_node_order(airways_graph)
     # define branch_mask and get modified airways_graph
-    branches_mask, airways_graph, min_dist_img = assign_branch(bronco_mask_arr, airways_graph)
+    branches_mask, airways_graph, min_dist_img = assign_branch(
+        bronco_mask_arr, airways_graph
+    )
     # min_dist_img = sitk.GetImageFromArray(min_dist_img)
     # min_dist_img.CopyInformation(bronco_mask)
     # sitk.WriteImage(min_dist_img, "distance_map.nrrd")
@@ -80,10 +82,12 @@ def model_tree(bronco_mask):
             coord2 = tuple(airways_graph.nodes()[neighbor]["o"])
 
             # Set the corresponding points to 1 in the mask
-            combined_mask[coord1] = 1
-            combined_mask[coord2] = 1
+            curr_mask[coord1] = 1
+            curr_mask[coord2] = 1
             # branch_mask = smooth_branch(edge_points, bronco_mask_arr)
-            branch_mask, points_up, points_down = smooth_branch(edge_points, combined_mask, True)
+            branch_mask, points_up, points_down = smooth_branch(
+                edge_points, curr_mask, True
+            )
             # points down should be assigned to the lower node
             # points up - use with points down of the upper node
             # add the branch to the tree_mask
@@ -106,5 +110,5 @@ def smooth_tree(bronco_mask):
     sitk_smoothed_tree = sitk.GetImageFromArray(smoothed_tree)
     sitk_smoothed_tree = sitk.Cast(sitk_tree_mask, sitk.sitkUInt16)
     sitk_smoothed_tree.CopyInformation(bronco_mask)
-    
+
     return sitk_smoothed_tree, sitk_tree_mask
