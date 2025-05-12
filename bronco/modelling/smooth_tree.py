@@ -89,12 +89,11 @@ def model_tree(bronco_mask):
                 edge_points, curr_mask, True
             )
             # points down should be assigned to the lower node
+            airways_graph.nodes()[neighbor]["ellipse"] = points_down
+            prev_down = airways_graph.nodes()[node]["ellipse"]
+
             # points up - use with points down of the upper node
-            # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
-        #     break
-        # break
-    # TODO: connect the branches
     return tree_mask.astype(int)
 
 
@@ -104,11 +103,5 @@ def smooth_tree(bronco_mask):
     sitk_tree_mask = sitk.Cast(sitk_tree_mask, sitk.sitkUInt16)
     sitk_tree_mask.CopyInformation(bronco_mask)
 
-    # Apply morphological closing
-    selem = ball(3)  # Use a ball structuring element with radius 3
-    smoothed_tree = closing(tree_mask, selem)
-    sitk_smoothed_tree = sitk.GetImageFromArray(smoothed_tree)
-    sitk_smoothed_tree = sitk.Cast(sitk_tree_mask, sitk.sitkUInt16)
-    sitk_smoothed_tree.CopyInformation(bronco_mask)
-
+    sitk_smoothed_tree = sitk_tree_mask
     return sitk_smoothed_tree, sitk_tree_mask
