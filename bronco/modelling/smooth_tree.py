@@ -59,7 +59,6 @@ def model_tree(bronco_mask):
     # b_mask = sitk.GetImageFromArray(branches_mask)
     # b_mask.CopyInformation(bronco_mask)
     # sitk.WriteImage(b_mask, "branches_mask.nrrd")
-    curr_mask = np.zeros_like(tree_mask)
     for node in tqdm(node_order):
         for neighbor in airways_graph.neighbors(node):
             # if neighbor is before node in node_order, then it was already processed
@@ -73,20 +72,18 @@ def model_tree(bronco_mask):
             if not (edge_points[0] == airways_graph.nodes()[node]["o"]).all():
                 edge_points = edge_points[::-1]
 
-            prev_mask = curr_mask * 2
             current_branch_mask = edge["mask"]
             curr_mask = (branches_mask == current_branch_mask).astype(int)
-            combined_mask = np.where(curr_mask == 1, 1, prev_mask)
 
             # Extract coordinates
             coord1 = tuple(airways_graph.nodes()[node]["o"])
             coord2 = tuple(airways_graph.nodes()[neighbor]["o"])
 
             # Set the corresponding points to 1 in the mask
-            combined_mask[coord1] = 1
-            combined_mask[coord2] = 1
+            curr_mask[coord1] = 1
+            curr_mask[coord2] = 1
             # branch_mask = smooth_branch(edge_points, bronco_mask_arr)
-            branch_mask = smooth_branch(edge_points, combined_mask, True)
+            branch_mask = smooth_branch(edge_points, curr_mask, True)
             # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
         #     break

@@ -56,7 +56,7 @@ def segment_branch(branch: np.ndarray, adaptive=False) -> list:
     if adaptive:
         add_unique(np.array([0, len(branch) - 1]))  # Add first and last point indices
 
-        for area in [30.0, 15.0, 10.0, 5.0, 2.0]:
+        for area in [30.0, 20, 15.0, 10.0, 5.0, 2.0]:
             points = visvalingam_whyatt_3d(branch, area)
             # Get the indices of the points that were kept
             indices = np.where(np.isin(branch, points).all(axis=1))[0]
@@ -102,7 +102,7 @@ def assign_branch(image, graph):
         
         if max_val > 0:  # Avoid division by zero
             normalized_min_dist_img[mask] = min_dist_img[mask] / max_val
-    
+
     # Keep zeros unchanged
     normalized_min_dist_img[new_image == 0] = 0
 

@@ -102,7 +102,7 @@ def analyse_segment(points, ellipses, eps=1e-10):
     ellipse2 = check_ellipse_convergence(ellipse2, ellipse1, eps=eps)
     ellipse1 = check_ellipse_convergence(ellipse1, ellipse2, eps=eps, to_higher=False)
 
-    inside_cylinder = is_point_in_cylinder(
+    inside_cylinder, _, __ = is_point_in_cylinder(
         points,
         ellipse1[0],
         ellipse2[0],
@@ -128,16 +128,7 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
     """
     best_cylinder = np.zeros(image.shape, dtype=int)
 
-    # x, y, z = np.meshgrid(
-    #     np.arange(image.shape[0]),
-    #     np.arange(image.shape[1]),
-    #     np.arange(image.shape[2]),
-    #     indexing="ij",
-    # )
-    # points = np.column_stack((x.ravel(), y.ravel(), z.ravel()))
-
     points = np.argwhere(image == 1)
-    # prev_points = np.argwhere(image == 2)
     svd, densified_points =  prepare_branch_svd(points)
     transformed_points = svd.transform(points)
 
