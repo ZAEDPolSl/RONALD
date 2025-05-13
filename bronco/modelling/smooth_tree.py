@@ -1,6 +1,6 @@
 import numpy as np
 import SimpleITK as sitk
-from skimage.morphology import skeletonize
+from skimage.morphology import skeletonize, closing, ball
 from tqdm import tqdm
 from bronco.external.sknw import build_sknw
 from bronco.modelling.model_branch import smooth_branch
@@ -52,17 +52,10 @@ def model_tree(bronco_mask):
     tree_mask = np.zeros_like(bronco_mask_arr)
     smooth_mask = np.zeros_like(bronco_mask_arr)
     node_order = get_node_order(airways_graph)
-    # define branch_mask and get modified airways_graph
     branches_mask, airways_graph, min_dist_img = assign_branch(
         bronco_mask_arr, airways_graph
     )
-    # min_dist_img = sitk.GetImageFromArray(min_dist_img)
-    # min_dist_img.CopyInformation(bronco_mask)
-    # sitk.WriteImage(min_dist_img, "distance_map.nrrd")
 
-    # b_mask = sitk.GetImageFromArray(branches_mask)
-    # b_mask.CopyInformation(bronco_mask)
-    # sitk.WriteImage(b_mask, "branches_mask.nrrd")
     for node in tqdm(node_order):
         for neighbor in airways_graph.neighbors(node):
             # if neighbor is before node in node_order, then it was already processed
@@ -75,7 +68,6 @@ def model_tree(bronco_mask):
             # check the order of the points - if it starts at node, it is correct
             if not (edge_points[0] == airways_graph.nodes()[node]["o"]).all():
                 edge_points = edge_points[::-1]
-
             current_branch_mask = edge["mask"]
             curr_mask = (branches_mask == current_branch_mask).astype(int)
 
@@ -86,16 +78,17 @@ def model_tree(bronco_mask):
             # Set the corresponding points to 1 in the mask
             curr_mask[coord1] = 1
             curr_mask[coord2] = 1
-            # branch_mask = smooth_branch(edge_points, bronco_mask_arr)
-            branch_mask, points_up, points_down = smooth_branch(
+            branch_mask, upper_ellipse, lower_ellipse = smooth_branch(
                 edge_points, curr_mask, True
             )
-            # points down should be assigned to the lower node
-            airways_graph.nodes()[neighbor]["ellipse"] = points_down
-            prev_down = airways_graph.nodes()[node]["ellipse"]
-            smooth_mask = fill_gaps(points_up, prev_down, smooth_mask)
+            airways_graph.nodes[neighbor]["ellipse"] = lower_ellipse
+            # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
-    return tree_mask.astype(int), smooth_mask.astype(int)
+            smooth_mask = np.logical_or(smooth_mask, tree_mask)
+            if node != node_order[0]:
+                prev_ellipse = airways_graph.nodes[node]["ellipse"]
+                smooth_mask = fill_gaps(prev_ellipse, upper_ellipse, smooth_mask)
+    return tree_mask.astype(int), smooth_mask
 
 
 def smooth_tree(bronco_mask):
@@ -107,4 +100,5 @@ def smooth_tree(bronco_mask):
     sitk_smoothed_tree = sitk.GetImageFromArray(smooth_mask)
     sitk_smoothed_tree = sitk.Cast(sitk_smoothed_tree, sitk.sitkUInt16)
     sitk_smoothed_tree.CopyInformation(bronco_mask)
+
     return sitk_smoothed_tree, sitk_tree_mask

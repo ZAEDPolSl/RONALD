@@ -74,11 +74,11 @@ def is_point_in_cylinder(
     semi_minor_length = (1 - t) * np.linalg.norm(minor1) + t * np.linalg.norm(minor2)
 
     # Project local vectors onto the unit major and minor axes
-    major_projections = (
-        np.einsum("ij,ij->i", local_vectors, major_unit) / (semi_major_length + eps)
+    major_projections = np.einsum("ij,ij->i", local_vectors, major_unit) / (
+        semi_major_length + eps
     )
-    minor_projections = (
-        np.einsum("ij,ij->i", local_vectors, minor_unit) / (semi_minor_length + eps)
+    minor_projections = np.einsum("ij,ij->i", local_vectors, minor_unit) / (
+        semi_minor_length + eps
     )
 
     # Ellipse equation check
@@ -86,11 +86,7 @@ def is_point_in_cylinder(
 
     # Final result: inside the cylinder if within height bounds and inside the ellipse
     inside_cylinder = height_bounds_check & ellipse_checks
-
-    on_first_base = inside_cylinder & (np.abs(projection_lengths) <= eps)
-    on_second_base = inside_cylinder & (np.abs(projection_lengths - height) <= eps)
-
-    return inside_cylinder, on_first_base, on_second_base
+    return inside_cylinder
 
 
 if __name__ == "__main__":
