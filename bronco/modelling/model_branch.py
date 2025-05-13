@@ -127,7 +127,7 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
     Returns:
         smooth_branch: numpy array of shape (I, J, K) - 3D binary image
     """
-    best_cylinder = np.zeros(image.shape, dtype=int)
+    best_cylinder = np.ones(image.shape, dtype=int) * (-1)
 
     points = np.argwhere(image == 1)
     svd, densified_points =  prepare_branch_svd(points)
