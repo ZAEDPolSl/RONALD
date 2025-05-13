@@ -93,7 +93,6 @@ def is_point_in_cylinder(
 
     on_first_base = (inside_cylinder & mask_first).astype(int)
     on_second_base = (inside_cylinder & mask_second).astype(int)
-
     return inside_cylinder, on_first_base, on_second_base
 
 

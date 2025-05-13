@@ -102,7 +102,7 @@ def analyse_segment(points, ellipses, eps=1e-10):
     ellipse2 = check_ellipse_convergence(ellipse2, ellipse1, eps=eps)
     ellipse1 = check_ellipse_convergence(ellipse1, ellipse2, eps=eps, to_higher=False)
 
-    inside_cylinder, _, __ = is_point_in_cylinder(
+    inside_cylinder, on_first_base, on_second_base = is_point_in_cylinder(
         points,
         ellipse1[0],
         ellipse2[0],
@@ -111,7 +111,7 @@ def analyse_segment(points, ellipses, eps=1e-10):
         ellipse2[1],
         ellipse2[2],
     )
-    return inside_cylinder
+    return inside_cylinder, on_first_base, on_second_base
 
 
 def smooth_branch(branch, image, segments=False, eps=1e-10):
@@ -153,17 +153,20 @@ def smooth_branch(branch, image, segments=False, eps=1e-10):
             transformed_endpoints = svd.transform(np.array([branch[start_idx], branch[end_idx]]))
             ellipses = separate_branch(densified_points, transformed_endpoints, segments)
 
-            inside_cylinder = analyse_segment(transformed_points, ellipses, eps=eps)
+            inside_cylinder, _on_first_base, on_second_base = analyse_segment(transformed_points, ellipses, eps=eps)
             # ellipses 0 and previous ellipse
             # previous ellipse is in a different coordinate system - get the lower ellipse indices beforehand from svd and then use in og coord system
-            cyl = points[inside_cylinder]     
+            cyl = points[inside_cylinder]
+            if i == 0:
+                on_first_base = _on_first_base
             cyl_mask = np.zeros(image.shape, dtype=int)
             cyl_mask[cyl[:, 0], cyl[:, 1], cyl[:, 2]] = 1
             smooth_cylinder = np.logical_or(smooth_cylinder, cyl_mask)
         if np.sum(smooth_cylinder) > np.sum(best_cylinder):
             best_cylinder = smooth_cylinder
-            best_cyl = cyl
+            second_base = points[on_second_base]
+            first_base = points[on_first_base]
         elif np.sum(smooth_cylinder) == 0:
             continue
         else: break
-    return best_cylinder.astype(int)
+    return best_cylinder.astype(int), first_base, second_base
