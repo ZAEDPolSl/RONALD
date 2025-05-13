@@ -18,6 +18,19 @@ sitk_to_numpy_dtype = {
     sitk.sitkFloat64: np.float64,
 }
 
+sitk_to_itk_pixel_type = {
+    sitk.sitkUInt8: itk.UC,  # unsigned char / uint8
+    sitk.sitkInt8: itk.SC,  # signed char / int8
+    sitk.sitkUInt16: itk.US,  # unsigned short / uint16
+    sitk.sitkInt16: itk.SS,  # signed short / int16
+    sitk.sitkUInt32: itk.UI,  # unsigned int / uint32
+    sitk.sitkInt32: itk.SI,  # signed int / int32
+    sitk.sitkUInt64: itk.UL,  # unsigned long / uint64
+    sitk.sitkInt64: itk.SL,  # signed long / int64
+    sitk.sitkFloat32: itk.F,  # float / float32
+    sitk.sitkFloat64: itk.D,  # double / float64
+}
+
 
 def ConvertItkImageToSimpleItkImage(
     _itk_image: itk.Image, _pixel_id_value: int, _direction: List[float]

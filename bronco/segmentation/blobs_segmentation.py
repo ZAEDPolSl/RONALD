@@ -1,0 +1,79 @@
+import itk
+from bronco.external.sitk2itk import ConvertItkImageToSimpleItkImage
+from bronco.external.sitk2itk import ConvertSimpleItkImageToItkImage
+
+
+def blobs_segmentation(sitk_image, sitk_lungs):
+    """
+    Perform blob segmentation on a 3D image using ITK.
+
+    Parameters:
+        sitk_image: SimpleITK image - Input 3D image.
+        sitk_lungs: SimpleITK image - Lung mask.
+
+    Returns:
+        sitk_blob_enhanced: SimpleITK image - Blob-enhanced image.
+    """
+    itk_image = ConvertSimpleItkImageToItkImage(sitk_image, itk.F)
+    itk_lungs = ConvertSimpleItkImageToItkImage(sitk_lungs, itk.F)
+    direction = sitk_image.GetDirection()
+
+    multiply_filter = itk.MultiplyImageFilter[
+        itk.Image[itk.F, 3], itk.Image[itk.F, 3], itk.Image[itk.F, 3]
+    ].New()
+    multiply_filter.SetInput1(itk_image)
+    multiply_filter.SetInput2(itk_lungs)
+    multiply_filter.Update()
+    masked_image = multiply_filter.GetOutput()
+
+    Dimension = 3
+    PixelType = itk.F
+    ImageType = itk.Image[PixelType, Dimension]
+    HessianPixelType = itk.SymmetricSecondRankTensor[PixelType, Dimension]
+    HessianImageType = itk.Image[HessianPixelType, Dimension]
+
+    # Set up the Hessian to objectness measure filter for blobs (object dimension = 0)
+    objectness_filter = itk.HessianToObjectnessMeasureImageFilter[
+        HessianImageType, ImageType
+    ].New()
+    objectness_filter.SetObjectDimension(0)  # 0 for blobs
+    objectness_filter.SetBrightObject(
+        True
+    )  # True if blobs are bright on dark background
+    objectness_filter.SetAlpha(0.5)  # Sensitivity to blob shape deviation
+    objectness_filter.SetBeta(
+        1.0
+    )  # Sensitivity to plate-like structures (not critical for blobs)
+    objectness_filter.SetGamma(5.0)  # Sensitivity to background noise
+    objectness_filter.SetScaleObjectnessMeasure(
+        False
+    )  # Do not scale by eigenvalue magnitude
+
+    # Set up the multi-scale Hessian-based measure filter
+    multi_scale_filter = itk.MultiScaleHessianBasedMeasureImageFilter[
+        ImageType, HessianImageType, ImageType
+    ].New()
+    multi_scale_filter.SetInput(masked_image)
+    multi_scale_filter.SetHessianToMeasureFilter(objectness_filter)
+    multi_scale_filter.SetSigmaMinimum(
+        1.0
+    )  # Minimum scale (adjust to expected blob size)
+    multi_scale_filter.SetSigmaMaximum(5.0)  # Maximum scale
+    multi_scale_filter.SetNumberOfSigmaSteps(8)  # Number of scales
+    multi_scale_filter.SetSigmaStepMethodToLogarithmic()
+
+    # Run the filter
+    multi_scale_filter.Update()
+    enhanced_blobs = multi_scale_filter.GetOutput()
+
+    # Rescale intensity for saving as 8-bit image
+    OutputPixelType = itk.UC
+    OutputImageType = itk.Image[OutputPixelType, Dimension]
+    rescale_filter = itk.RescaleIntensityImageFilter[ImageType, OutputImageType].New()
+    rescale_filter.SetInput(enhanced_blobs)
+    rescale_filter.SetOutputMinimum(0)
+    rescale_filter.SetOutputMaximum(255)
+    rescale_filter.Update()
+    itk_blobs = rescale_filter.GetOutput()
+    sitk_blob_enhanced = ConvertItkImageToSimpleItkImage(itk_blobs, 1, direction)
+    return sitk_blob_enhanced
