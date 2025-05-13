@@ -76,7 +76,6 @@ def model_tree(bronco_mask):
             # Set the corresponding points to 1 in the mask
             curr_mask[coord1] = 1
             curr_mask[coord2] = 1
-            # branch_mask = smooth_branch(edge_points, bronco_mask_arr)
             branch_mask, upper_ellipse, lower_ellipse = smooth_branch(edge_points, curr_mask, True)
             airways_graph.nodes[neighbor]["ellipse"] = lower_ellipse
             # add the branch to the tree_mask
@@ -85,7 +84,6 @@ def model_tree(bronco_mask):
             if node != node_order[0]: 
                 prev_ellipse = airways_graph.nodes[node]["ellipse"]
                 smooth_mask = fill_gaps(prev_ellipse, upper_ellipse, smooth_mask)
-        #     break
     return tree_mask.astype(int), smooth_mask
 
 

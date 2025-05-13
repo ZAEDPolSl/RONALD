@@ -86,14 +86,7 @@ def is_point_in_cylinder(
 
     # Final result: inside the cylinder if within height bounds and inside the ellipse
     inside_cylinder = height_bounds_check & ellipse_checks
-
-    tol = (points[:, 0].max() - points[:, 0].min()) / 100
-    mask_first = np.isclose(projection_lengths, 0, atol=tol)
-    mask_second = np.isclose(projection_lengths, height, atol=tol)
-
-    on_first_base = (inside_cylinder & mask_first).astype(int)
-    on_second_base = (inside_cylinder & mask_second).astype(int)
-    return inside_cylinder, on_first_base, on_second_base
+    return inside_cylinder
 
 
 if __name__ == "__main__":
