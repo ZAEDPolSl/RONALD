@@ -14,20 +14,22 @@ def blobs_segmentation(sitk_image, sitk_lungs):
     Returns:
         sitk_blob_enhanced: SimpleITK image - Blob-enhanced image.
     """
-    itk_image = ConvertSimpleItkImageToItkImage(sitk_image, itk.F)
-    itk_lungs = ConvertSimpleItkImageToItkImage(sitk_lungs, itk.F)
+    # sitk.sitkFloat64
+    Dimension = 3
+    PixelType = itk.D
+
+    itk_image = ConvertSimpleItkImageToItkImage(sitk_image, PixelType)
+    itk_lungs = ConvertSimpleItkImageToItkImage(sitk_lungs, PixelType)
     direction = sitk_image.GetDirection()
 
     multiply_filter = itk.MultiplyImageFilter[
-        itk.Image[itk.F, 3], itk.Image[itk.F, 3], itk.Image[itk.F, 3]
+        itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension]
     ].New()
     multiply_filter.SetInput1(itk_image)
     multiply_filter.SetInput2(itk_lungs)
     multiply_filter.Update()
     masked_image = multiply_filter.GetOutput()
 
-    Dimension = 3
-    PixelType = itk.F
     ImageType = itk.Image[PixelType, Dimension]
     HessianPixelType = itk.SymmetricSecondRankTensor[PixelType, Dimension]
     HessianImageType = itk.Image[HessianPixelType, Dimension]
