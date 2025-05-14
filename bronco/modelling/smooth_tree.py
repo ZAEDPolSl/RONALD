@@ -79,7 +79,9 @@ def model_tree(bronco_mask):
             curr_mask[coord1] = 1
             curr_mask[coord2] = 1
             analyser = BranchAnalyser()  # segments=True by default
-            branch_mask, upper_ellipse, lower_ellipse = analyser.smooth_branch(edge_points, curr_mask)
+            branch_mask, upper_ellipse, lower_ellipse = analyser.smooth_branch(
+                edge_points, curr_mask
+            )
 
             airways_graph.nodes[neighbor]["ellipse"] = lower_ellipse
             # add the branch to the tree_mask

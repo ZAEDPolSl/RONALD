@@ -89,7 +89,9 @@ def assign_branch(image, graph):
     new_image[checkpoints[:, 0], checkpoints[:, 1], checkpoints[:, 2]] = (
         edge_indices + 1
     )
-    min_dist_img[checkpoints[:, 0], checkpoints[:, 1], checkpoints[:, 2]] = min_distances
+    min_dist_img[checkpoints[:, 0], checkpoints[:, 1], checkpoints[:, 2]] = (
+        min_distances
+    )
     normalized_min_dist_img = np.zeros_like(min_dist_img, dtype=np.float32)
     # Get unique labels excluding zero
     unique_labels = np.unique(new_image)
@@ -99,7 +101,7 @@ def assign_branch(image, graph):
     for label in unique_labels:
         mask = new_image == label  # Get mask for current label
         max_val = np.median(min_dist_img[mask])  # Find max distance for this label
-        
+
         if max_val > 0:  # Avoid division by zero
             normalized_min_dist_img[mask] = min_dist_img[mask] / max_val
 

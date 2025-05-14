@@ -321,4 +321,4 @@ def airways_segmentation(
 
     # sitk_airways = sitk_airways + 2 * sitk_walls
 
-    return sitk_airways, sitk_walls, sitk_trachea #, sitk_vessels
+    return sitk_airways, sitk_walls, sitk_trachea  # , sitk_vessels
