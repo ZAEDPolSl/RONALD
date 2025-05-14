@@ -3,7 +3,7 @@ import SimpleITK as sitk
 from skimage.morphology import skeletonize, closing, ball
 from tqdm import tqdm
 from bronco.external.sknw import build_sknw
-from bronco.modelling.model_branch import smooth_branch
+from bronco.modelling.model_branch import BranchAnalyser
 from bronco.modelling.segment_branch import assign_branch
 from bronco.modelling.fill_gaps import fill_gaps
 
@@ -78,9 +78,9 @@ def model_tree(bronco_mask):
             # Set the corresponding points to 1 in the mask
             curr_mask[coord1] = 1
             curr_mask[coord2] = 1
-            branch_mask, upper_ellipse, lower_ellipse = smooth_branch(
-                edge_points, curr_mask, True
-            )
+            analyser = BranchAnalyser()  # segments=True by default
+            branch_mask, upper_ellipse, lower_ellipse = analyser.smooth_branch(edge_points, curr_mask)
+
             airways_graph.nodes[neighbor]["ellipse"] = lower_ellipse
             # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)

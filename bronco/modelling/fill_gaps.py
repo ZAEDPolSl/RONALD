@@ -4,8 +4,14 @@ from skimage.draw import line_nd
 
 
 def fill_gaps(upper_ellipse, lower_ellipse, smooth_tree_mask):
+    upper_unique = np.unique(upper_ellipse, axis=0)
+    lower_unique = np.unique(lower_ellipse, axis=0)
+    same_values = np.array_equal(upper_unique, lower_unique)
+    if same_values:
+        return smooth_tree_mask
+    
     all_points = np.unique(
-        np.concatenate([upper_ellipse, lower_ellipse], axis=0), axis=0
+        np.concatenate([upper_unique, lower_unique], axis=0), axis=0
     )
     n_points = all_points.shape[0]
     mask = np.zeros_like(smooth_tree_mask, dtype=bool)
