@@ -84,10 +84,14 @@ def model_tree(bronco_mask):
             )
 
             airways_graph.nodes[neighbor]["ellipse"] = lower_ellipse
+            print(airways_graph.nodes[neighbor])
+            print(node_order.index(neighbor))
             # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
             smooth_mask = np.logical_or(smooth_mask, tree_mask)
-            if node != node_order[0]:
+            print(airways_graph.nodes[node])
+            print(node_order.index(node))
+            if node_order.index(node) != 0:
                 prev_ellipse = airways_graph.nodes[node]["ellipse"]
                 smooth_mask = fill_gaps(prev_ellipse, upper_ellipse, smooth_mask)
     return tree_mask.astype(int), smooth_mask
