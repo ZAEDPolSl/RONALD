@@ -1,32 +1,11 @@
 import numpy as np
 import SimpleITK as sitk
-from skimage.morphology import skeletonize, closing, ball
+from skimage.morphology import skeletonize
 from tqdm import tqdm
-from bronco.external.sknw import build_sknw
 from bronco.modelling.model_branch import BranchAnalyser
 from bronco.modelling.segment_branch import assign_branch
 from bronco.modelling.fill_gaps import fill_gaps
-
-
-def get_skeleton(mask):
-    airways = sitk.GetArrayFromImage(mask)
-    skeleton = skeletonize(airways)
-    skeleton = skeleton.astype(int)
-    sitk_skeleton = sitk.GetImageFromArray(skeleton)
-    sitk_skeleton.CopyInformation(mask)
-    _sitk_skeleton = sitk.BinaryFillhole(sitk.Cast(sitk_skeleton > 0, sitk.sitkUInt8))
-    _sitk_skeleton = sitk.Cast(
-        (
-            _sitk_skeleton
-            - sitk.BinaryMorphologicalOpening(_sitk_skeleton, kernelRadius=(1, 1, 1))
-        )
-        > 0,
-        sitk.sitkUInt8,
-    )
-    skeleton = sitk.GetArrayFromImage(_sitk_skeleton)
-    airways_graph = build_sknw(skeleton, iso=False, ring=False, full=True)
-    return airways_graph
-
+from bronco.modelling.prepare_graph import prepare_graph
 
 def get_node_order(graph):
     trachea_top_node = max(graph.nodes(), key=lambda node: graph.nodes[node]["o"][0])
@@ -47,7 +26,7 @@ def get_node_order(graph):
 
 
 def model_tree(bronco_mask):
-    airways_graph = get_skeleton(bronco_mask)
+    airways_graph = prepare_graph(bronco_mask)
     bronco_mask_arr = sitk.GetArrayFromImage(bronco_mask)
     tree_mask = np.zeros_like(bronco_mask_arr)
     smooth_mask = np.zeros_like(bronco_mask_arr)
@@ -84,14 +63,10 @@ def model_tree(bronco_mask):
             )
 
             airways_graph.nodes[neighbor]["ellipse"] = lower_ellipse
-            print(airways_graph.nodes[neighbor])
-            print(node_order.index(neighbor))
             # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
             smooth_mask = np.logical_or(smooth_mask, tree_mask)
-            print(airways_graph.nodes[node])
-            print(node_order.index(node))
-            if node_order.index(node) != 0:
+            if node_order.index(node) != 0 and "ellipse" in airways_graph.nodes[node]:
                 prev_ellipse = airways_graph.nodes[node]["ellipse"]
                 smooth_mask = fill_gaps(prev_ellipse, upper_ellipse, smooth_mask)
     return tree_mask.astype(int), smooth_mask
