@@ -1,11 +1,12 @@
 import numpy as np
 import SimpleITK as sitk
-from skimage.morphology import skeletonize
 from tqdm import tqdm
-from bronco.modelling.model_branch import BranchAnalyser
-from bronco.modelling.segment_branch import assign_branch
+
 from bronco.modelling.fill_gaps import fill_gaps
+from bronco.modelling.model_branch import BranchAnalyser
 from bronco.modelling.prepare_graph import prepare_graph
+from bronco.modelling.segment_branch import assign_branch
+
 
 def get_node_order(graph):
     trachea_top_node = max(graph.nodes(), key=lambda node: graph.nodes[node]["o"][0])

@@ -23,7 +23,9 @@ def blobs_segmentation(sitk_image, sitk_lungs):
     direction = sitk_image.GetDirection()
 
     multiply_filter = itk.MultiplyImageFilter[
-        itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension]
+        itk.Image[PixelType, Dimension],
+        itk.Image[PixelType, Dimension],
+        itk.Image[PixelType, Dimension],
     ].New()
     multiply_filter.SetInput1(itk_image)
     multiply_filter.SetInput2(itk_lungs)

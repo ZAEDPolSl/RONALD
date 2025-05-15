@@ -1,7 +1,9 @@
 import networkx as nx
 import SimpleITK as sitk
+from skimage.morphology import skeletonize
 
 from bronco.external.sknw import build_sknw
+
 
 def keep_largest_component(graph):
     largest_cc = max(nx.connected_components(graph), key=len)
@@ -14,7 +16,7 @@ def make_bfs_tree(graph, root):
 
 def clean_airways_graph(graph):
     graph = keep_largest_component(graph)
-    root = max(graph.nodes(), key=lambda n: graph.nodes[n]['o'][0])
+    root = max(graph.nodes(), key=lambda n: graph.nodes[n]["o"][0])
     graph = make_bfs_tree(graph, root)
     return graph
 
