@@ -4,6 +4,7 @@ from bronco.external.sitk2itk import ConvertSimpleItkImageToItkImage
 
 
 def blobs_segmentation(sitk_image, sitk_lungs):
+    # fix because blobs are outside(???)
     """
     Perform blob segmentation on a 3D image using ITK.
 
@@ -23,9 +24,7 @@ def blobs_segmentation(sitk_image, sitk_lungs):
     direction = sitk_image.GetDirection()
 
     multiply_filter = itk.MultiplyImageFilter[
-        itk.Image[PixelType, Dimension],
-        itk.Image[PixelType, Dimension],
-        itk.Image[PixelType, Dimension],
+        itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension]
     ].New()
     multiply_filter.SetInput1(itk_image)
     multiply_filter.SetInput2(itk_lungs)
@@ -60,15 +59,24 @@ def blobs_segmentation(sitk_image, sitk_lungs):
     multi_scale_filter.SetInput(masked_image)
     multi_scale_filter.SetHessianToMeasureFilter(objectness_filter)
     multi_scale_filter.SetSigmaMinimum(
-        1.0
+        4.0
     )  # Minimum scale (adjust to expected blob size)
-    multi_scale_filter.SetSigmaMaximum(5.0)  # Maximum scale
-    multi_scale_filter.SetNumberOfSigmaSteps(8)  # Number of scales
+    multi_scale_filter.SetSigmaMaximum(25)  # Maximum scale
+    multi_scale_filter.SetNumberOfSigmaSteps(21)  # Number of scales
     multi_scale_filter.SetSigmaStepMethodToLogarithmic()
 
     # Run the filter
     multi_scale_filter.Update()
     enhanced_blobs = multi_scale_filter.GetOutput()
+
+    multiply_filter = itk.MultiplyImageFilter[
+    itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension]
+    ].New()
+    multiply_filter.SetInput1(enhanced_blobs)
+    multiply_filter.SetInput2(itk_lungs)
+    multiply_filter.Update()
+    enhanced_blobs = multiply_filter.GetOutput()
+
 
     # Rescale intensity for saving as 8-bit image
     OutputPixelType = itk.UC
