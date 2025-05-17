@@ -58,7 +58,5 @@ def get_skeleton(mask):
 
 def prepare_graph(mask):
     skeleton = get_skeleton(mask)
-    print(skeleton.nodes()[0])
     skeleton = clean_airways_graph(skeleton)
-    print(skeleton.nodes()[0])
     return skeleton
