@@ -11,8 +11,23 @@ def keep_largest_component(graph):
 
 
 def make_bfs_tree(graph, root):
-    return nx.bfs_tree(graph, root).to_undirected()
+    bfs_edges = list(nx.bfs_edges(graph, root))
+    bfs_nodes = set([root]) | {v for _, v in bfs_edges}
 
+    tree = nx.Graph()
+    
+    for node in bfs_nodes:
+        tree.add_node(node, **graph.nodes[node])
+
+    for u, v in bfs_edges:
+        if graph.has_edge(u, v):
+            tree.add_edge(u, v, **graph.edges[u, v])
+        elif graph.has_edge(v, u): 
+            tree.add_edge(u, v, **graph.edges[v, u])
+        else:
+            tree.add_edge(u, v)
+
+    return tree
 
 def clean_airways_graph(graph):
     graph = keep_largest_component(graph)
@@ -43,5 +58,7 @@ def get_skeleton(mask):
 
 def prepare_graph(mask):
     skeleton = get_skeleton(mask)
+    print(skeleton.nodes()[0])
     skeleton = clean_airways_graph(skeleton)
+    print(skeleton.nodes()[0])
     return skeleton
