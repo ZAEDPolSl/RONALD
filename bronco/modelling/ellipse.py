@@ -125,10 +125,16 @@ def fit_ellipse_3d(
         theta = 0
         center = np.mean(hull, axis=0)
         if hull.shape[0] >= 3:
-            circle = CircleModel()
-            circle.estimate(hull)
-            xc, yc, r = circle.params
-            a = b = r
+            try:
+                circle = CircleModel()
+                success = circle.estimate(hull)
+                if success and circle.params is not None:
+                    xc, yc, r = circle.params
+                    a = b = r
+            except TypeError:
+                xc, yc = center
+                r = np.linalg.norm(hull[0] - hull[1]) / 2
+                a = b = r
         elif hull.shape[0] == 2:
             xc, yc = center
             r = np.linalg.norm(hull[0] - hull[1]) / 2
