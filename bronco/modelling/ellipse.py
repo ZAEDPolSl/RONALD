@@ -111,7 +111,8 @@ def fit_ellipse_3d(
         ellipse = EllipseModel()
         hull_centered = hull - hull.mean(axis=0)
         try:
-            if ellipse.estimate(hull):
+            success = ellipse.estimate(hull)
+            if success and ellipse.params is not None:
                 xc, yc, a, b, theta = ellipse.params
                 xc += hull.mean(axis=0)[0]
                 yc += hull.mean(axis=0)[1]
@@ -119,6 +120,7 @@ def fit_ellipse_3d(
                 circle_check = True
         except TypeError:
             circle_check = True
+
     if circle_check:
         theta = 0
         center = np.mean(hull, axis=0)
