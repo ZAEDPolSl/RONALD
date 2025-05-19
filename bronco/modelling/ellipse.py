@@ -40,7 +40,7 @@ def are_points_symmetric(points, tol=1e-10):
     return proj_check and point_check
 
 
-def are_points_collinear(points, tol=1e-10):
+def are_points_collinear(points, tol=1e-8):
     if len(points) < 3:
         return True  # Two or fewer points are always collinear
     
@@ -109,11 +109,16 @@ def fit_ellipse_3d(
     # Fit ellipse in 2D using skimage
     if not circle_check:
         ellipse = EllipseModel()
-        if ellipse.estimate(hull):
-            xc, yc, a, b, theta = ellipse.params
-        else:
+        hull_centered = hull - hull.mean(axis=0)
+        try:
+            if ellipse.estimate(hull):
+                xc, yc, a, b, theta = ellipse.params
+                xc += hull.mean(axis=0)[0]
+                yc += hull.mean(axis=0)[1]
+            else:
+                circle_check = True
+        except TypeError:
             circle_check = True
-
     if circle_check:
         theta = 0
         center = np.mean(hull, axis=0)
