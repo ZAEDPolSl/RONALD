@@ -39,13 +39,52 @@ def fill_gaps(upper_ellipse, lower_ellipse, smooth_tree_mask):
             )
             mask[rr[valid], cc[valid], zz[valid]] = True
 
+        elif rank == 2:
+            # Points lie approximately on a plane
+            # Project points to 2D by dropping the axis with smallest variance
+            variances = all_points.var(axis=0)
+            drop_axis = np.argmin(variances)
+            axes_2d = [i for i in range(3) if i != drop_axis]
+
+            # Compute convex hull in 2D
+            points_2d = all_points[:, axes_2d]
+            hull_2d = ConvexHull(points_2d, qhull_options="QJ")
+
+            # Bounding box in 2D
+            min_bb = np.maximum(np.floor(points_2d.min(axis=0)) - 1, 0).astype(int)
+            max_bb = np.minimum(np.ceil(points_2d.max(axis=0)) + 1, np.array(mask.shape)[axes_2d] - 1).astype(int)
+
+            # Create grid in 2D bounding box
+            x, y = np.mgrid[min_bb[0] : max_bb[0] + 1, min_bb[1] : max_bb[1] + 1]
+            grid_points = np.vstack((x.ravel(), y.ravel())).T
+
+            # Delaunay triangulation in 2D on hull vertices
+            delaunay = Delaunay(points_2d[hull_2d.vertices])
+            mask_flat = delaunay.find_simplex(grid_points) >= 0
+
+            # Fill mask slice-wise along dropped axis
+            for slice_idx in range(mask.shape[drop_axis]):
+                # Build slice mask
+                slice_mask = np.zeros(mask.shape, dtype=bool)
+                # Indices for this slice in 3D
+                if drop_axis == 0:
+                    slice_mask[slice_idx, x, y] = mask_flat.reshape(x.shape)
+                elif drop_axis == 1:
+                    slice_mask[x, slice_idx, y] = mask_flat.reshape(x.shape)
+                else:  # drop_axis == 2
+                    slice_mask[x, y, slice_idx] = mask_flat.reshape(x.shape)
+
+                # Check if any original points lie in this slice (within tolerance)
+                points_in_slice = np.isclose(all_points[:, drop_axis], slice_idx, atol=0.5)
+                if points_in_slice.any():
+                    mask |= slice_mask
+
         else:
+            # Full 3D case: use all points for Delaunay to avoid flat simplex error
             hull = ConvexHull(all_points, qhull_options="QJ")
 
             min_bb = np.maximum(np.floor(all_points.min(axis=0)) - 1, 0).astype(int)
-            max_bb = np.minimum(
-                np.ceil(all_points.max(axis=0)) + 1, np.array(mask.shape) - 1
-            ).astype(int)
+            max_bb = np.minimum(np.ceil(all_points.max(axis=0)) + 1, np.array(mask.shape) - 1).astype(int)
 
             x, y, z = np.mgrid[
                 min_bb[0] : max_bb[0] + 1,
@@ -54,7 +93,8 @@ def fill_gaps(upper_ellipse, lower_ellipse, smooth_tree_mask):
             ]
             grid_points = np.vstack((x.ravel(), y.ravel(), z.ravel())).T
 
-            delaunay = Delaunay(all_points[hull.vertices])
+            # Use all points (not just hull vertices) for Delaunay
+            delaunay = Delaunay(all_points)
             mask_flat = delaunay.find_simplex(grid_points) >= 0
 
             mask_sub = mask[
