@@ -87,39 +87,33 @@ def fill_line_2d(points_2d, mask, drop_axis, axes_2d):
 
 
 def fill_polygon_2d(points_2d, mask, drop_axis, axes_2d, all_points):
-    """Fill mask for a polygon defined by points_2d, repeated along dropped axis (vectorized)."""
     try:
         hull_2d = ConvexHull(points_2d, qhull_options="QJ")
         delaunay = Delaunay(points_2d[hull_2d.vertices], qhull_options="QJ")
     except Exception:
-        mask = rasterize_polygon(points_2d, mask, drop_axis, axes_2d)
-        return mask
+        return rasterize_polygon(points_2d, mask, drop_axis, axes_2d)
 
     min_bb = np.maximum(np.floor(points_2d.min(axis=0)) - 1, 0).astype(int)
     max_bb = np.minimum(np.ceil(points_2d.max(axis=0)) + 1, np.array(mask.shape)[axes_2d] - 1).astype(int)
 
-    x, y = np.mgrid[min_bb[0]:max_bb[0] + 1, min_bb[1]:max_bb[1] + 1]
-    grid_points = np.vstack((x.ravel(), y.ravel())).T
+    x, y = np.mgrid[min_bb[0]: max_bb[0] + 1, min_bb[1]: max_bb[1] + 1]
 
+    grid_points = np.vstack((x.ravel(), y.ravel())).T
     mask_flat = delaunay.find_simplex(grid_points) >= 0
+    mask_flat = mask_flat.reshape(x.shape)
 
     slices_with_points = np.unique(np.round(all_points[:, drop_axis]).astype(int))
     valid_slices = slices_with_points[
         (slices_with_points >= 0) & (slices_with_points < mask.shape[drop_axis])
     ]
 
-    if drop_axis == 0:
-        expanded_mask = np.zeros_like(mask, dtype=bool)
-        expanded_mask[np.ix_(valid_slices, x.ravel(), y.ravel())] = mask_flat.reshape(x.shape)
-        mask |= expanded_mask
-    elif drop_axis == 1:
-        expanded_mask = np.zeros_like(mask, dtype=bool)
-        expanded_mask[np.ix_(x.ravel(), valid_slices, y.ravel())] = mask_flat.reshape(x.shape)
-        mask |= expanded_mask
-    else:
-        expanded_mask = np.zeros_like(mask, dtype=bool)
-        expanded_mask[np.ix_(x.ravel(), y.ravel(), valid_slices)] = mask_flat.reshape(x.shape)
-        mask |= expanded_mask
+    for slice_idx in valid_slices:
+        if drop_axis == 0:
+            mask[slice_idx, x, y] |= mask_flat
+        elif drop_axis == 1:
+            mask[x, slice_idx, y] |= mask_flat
+        else:
+            mask[x, y, slice_idx] |= mask_flat
 
     return mask
 
