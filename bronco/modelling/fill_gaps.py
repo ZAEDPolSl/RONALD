@@ -96,24 +96,24 @@ def fill_polygon_2d(points_2d, mask, drop_axis, axes_2d, all_points):
     min_bb = np.maximum(np.floor(points_2d.min(axis=0)) - 1, 0).astype(int)
     max_bb = np.minimum(np.ceil(points_2d.max(axis=0)) + 1, np.array(mask.shape)[axes_2d] - 1).astype(int)
 
-    x, y = np.mgrid[min_bb[0]: max_bb[0] + 1, min_bb[1]: max_bb[1] + 1]
-
+    x, y = np.mgrid[min_bb[0]:max_bb[0]+1, min_bb[1]:max_bb[1]+1]
     grid_points = np.vstack((x.ravel(), y.ravel())).T
+
     mask_flat = delaunay.find_simplex(grid_points) >= 0
-    mask_flat = mask_flat.reshape(x.shape)
+    mask_flat = mask_flat.reshape(x.shape)  # Shape (N, M)
 
+    # Get valid slices using original 3D points
     slices_with_points = np.unique(np.round(all_points[:, drop_axis]).astype(int))
-    valid_slices = slices_with_points[
-        (slices_with_points >= 0) & (slices_with_points < mask.shape[drop_axis])
-    ]
+    valid_slices = slices_with_points[(slices_with_points >= 0) & (slices_with_points < mask.shape[drop_axis])]
 
+    # Loop through slices and assign 2D mask
     for slice_idx in valid_slices:
         if drop_axis == 0:
-            mask[slice_idx, x, y] |= mask_flat
+            mask[slice_idx, min_bb[0]:max_bb[0]+1, min_bb[1]:max_bb[1]+1] |= mask_flat
         elif drop_axis == 1:
-            mask[x, slice_idx, y] |= mask_flat
+            mask[min_bb[0]:max_bb[0]+1, slice_idx, min_bb[1]:max_bb[1]+1] |= mask_flat
         else:
-            mask[x, y, slice_idx] |= mask_flat
+            mask[min_bb[0]:max_bb[0]+1, min_bb[1]:max_bb[1]+1, slice_idx] |= mask_flat
 
     return mask
 
