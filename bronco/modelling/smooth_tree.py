@@ -26,8 +26,8 @@ def get_node_order(graph):
     return sorted_nodes
 
 
-def model_tree(bronco_mask):
-    airways_graph = prepare_graph(bronco_mask)
+def model_tree(bronco_mask, airways_mask):
+    airways_graph = prepare_graph(airways_mask)
     bronco_mask_arr = sitk.GetArrayFromImage(bronco_mask)
     tree_mask = np.zeros_like(bronco_mask_arr)
     smooth_mask = np.zeros_like(bronco_mask_arr)
@@ -73,8 +73,8 @@ def model_tree(bronco_mask):
     return tree_mask.astype(int), smooth_mask
 
 
-def smooth_tree(bronco_mask):
-    tree_mask, smooth_mask = model_tree(bronco_mask)
+def smooth_tree(bronco_mask, airways_mask):
+    tree_mask, smooth_mask = model_tree(bronco_mask, airways_mask)
     sitk_tree_mask = sitk.GetImageFromArray(tree_mask)
     sitk_tree_mask = sitk.Cast(sitk_tree_mask, sitk.sitkUInt16)
     sitk_tree_mask.CopyInformation(bronco_mask)
