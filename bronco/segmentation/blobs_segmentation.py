@@ -43,11 +43,11 @@ def blobs_segmentation(sitk_image, sitk_lungs):
     objectness_filter.SetBrightObject(
         True
     )  # True if blobs are bright on dark background
-    objectness_filter.SetAlpha(0.5)  # Sensitivity to blob shape deviation
+    objectness_filter.SetAlpha(0.2)  # Sensitivity to blob shape deviation
     objectness_filter.SetBeta(
         1.0
     )  # Sensitivity to plate-like structures (not critical for blobs)
-    objectness_filter.SetGamma(5.0)  # Sensitivity to background noise
+    objectness_filter.SetGamma(20.0)  # Sensitivity to background noise
     objectness_filter.SetScaleObjectnessMeasure(
         False
     )  # Do not scale by eigenvalue magnitude
@@ -58,11 +58,9 @@ def blobs_segmentation(sitk_image, sitk_lungs):
     ].New()
     multi_scale_filter.SetInput(masked_image)
     multi_scale_filter.SetHessianToMeasureFilter(objectness_filter)
-    multi_scale_filter.SetSigmaMinimum(
-        4.0
-    )  # Minimum scale (adjust to expected blob size)
-    multi_scale_filter.SetSigmaMaximum(25)  # Maximum scale
-    multi_scale_filter.SetNumberOfSigmaSteps(21)  # Number of scales
+    multi_scale_filter.SetSigmaMinimum(1)
+    multi_scale_filter.SetSigmaMaximum(5)  # Maximum scale
+    multi_scale_filter.SetNumberOfSigmaSteps(8)  # Number of scales
     multi_scale_filter.SetSigmaStepMethodToLogarithmic()
 
     # Run the filter
@@ -87,5 +85,18 @@ def blobs_segmentation(sitk_image, sitk_lungs):
     rescale_filter.SetOutputMaximum(255)
     rescale_filter.Update()
     itk_blobs = rescale_filter.GetOutput()
+
+    ThresholdFilterType = itk.BinaryThresholdImageFilter[
+        type(itk_blobs), itk.Image[itk.UC, 3]
+    ]
+    threshold_filter = ThresholdFilterType.New()
+    threshold_filter.SetInput(itk_blobs)
+    threshold_filter.SetLowerThreshold(126)  # strictly greater than 125
+    threshold_filter.SetUpperThreshold(255)
+    threshold_filter.SetInsideValue(1)
+    threshold_filter.SetOutsideValue(0)
+    threshold_filter.Update()
+    itk_blobs = threshold_filter.GetOutput()
+
     sitk_blob_enhanced = ConvertItkImageToSimpleItkImage(itk_blobs, 1, direction)
     return sitk_blob_enhanced
