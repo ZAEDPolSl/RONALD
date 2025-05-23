@@ -151,33 +151,31 @@ def rasterize_polygon(points_2d, mask, drop_axis, axes_2d):
 
 
 def fill_volume_3d(points, mask):
-    """Fill mask for full 3D point cloud using Delaunay triangulation."""
-    hull = ConvexHull(points, qhull_options="QJ")
+    """Fill mask for full 3D point cloud using Delaunay triangulation with robust fallback."""
+    try:
+        delaunay = Delaunay(points, qhull_options="QJ0.5")
+    except Exception:
+        hull = ConvexHull(points, qhull_options="QJ0.5")
+        delaunay = Delaunay(points[hull.vertices], qhull_options="QJ0.5")
 
-    if len(hull.vertices) == 3:
-        variances = points.var(axis=0)
-        drop_axis = np.argmin(variances)
-        axes_2d = [i for i in range(3) if i != drop_axis]
-        points_2d = points[:, axes_2d]
-        return fill_polygon_2d(points_2d, mask, drop_axis, axes_2d, points)
-
+    # Bounding box calculation
     min_bb = np.maximum(np.floor(points.min(axis=0)) - 1, 0).astype(int)
     max_bb = np.minimum(np.ceil(points.max(axis=0)) + 1, np.array(mask.shape) - 1).astype(int)
 
+    # Grid generation
     x, y, z = np.mgrid[
-        min_bb[0] : max_bb[0] + 1,
-        min_bb[1] : max_bb[1] + 1,
-        min_bb[2] : max_bb[2] + 1,
+        min_bb[0]:max_bb[0] + 1,
+        min_bb[1]:max_bb[1] + 1,
+        min_bb[2]:max_bb[2] + 1,
     ]
     grid_points = np.vstack((x.ravel(), y.ravel(), z.ravel())).T
 
-    delaunay = Delaunay(points, qhull_options="QJ")
+    # Mask filling
     mask_flat = delaunay.find_simplex(grid_points) >= 0
-
-    mask_sub = mask[
-        min_bb[0] : max_bb[0] + 1,
-        min_bb[1] : max_bb[1] + 1,
-        min_bb[2] : max_bb[2] + 1,
-    ]
-    mask_sub[:] = mask_flat.reshape(x.shape)
+    mask[
+        min_bb[0]:max_bb[0] + 1,
+        min_bb[1]:max_bb[1] + 1,
+        min_bb[2]:max_bb[2] + 1,
+    ] |= mask_flat.reshape(x.shape)
+    
     return mask
