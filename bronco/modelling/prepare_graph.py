@@ -60,3 +60,29 @@ def prepare_graph(mask):
     skeleton = get_skeleton(mask)
     skeleton = clean_airways_graph(skeleton)
     return skeleton
+
+
+def assign_thickness(G, node_order):
+    small_diameters = []
+
+    for u, v in G.edges():
+        # Determine the lower node based on order
+        lower_node = u if node_order.index(v) < node_order.index(u) else v
+
+        minor_len = G.nodes[lower_node].get("thickness")
+        if minor_len is not None:
+            small_diameters.append(minor_len)
+
+    max_diameter = max(small_diameters) if small_diameters else 1.0
+
+    for u, v, data in G.edges(data=True):
+        lower_node = u if node_order.index(v) < node_order.index(u) else v
+
+        minor_len = G.nodes[lower_node].get("thickness")
+        if minor_len is not None:
+            data["size"] = minor_len / max_diameter
+        else:
+            data["size"] = 0.0  # or None
+
+    return G
+

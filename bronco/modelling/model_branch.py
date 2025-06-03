@@ -121,7 +121,6 @@ class BranchAnalyser:
                 np.array([branch[start_idx], branch[end_idx]])
             )
             ellipses, ellipse_points = self.separate_branch(transformed_endpoints)
-
             if i > 0:
                 prev_lower = self.svd.inverse_transform(prev_upper)
                 curr_upper = self.svd.inverse_transform(ellipse_points[0])
@@ -139,7 +138,11 @@ class BranchAnalyser:
                 on_first_base = ellipse_points[0]
             on_second_base = ellipse_points[1]
 
-        return smooth_cylinder, on_first_base, on_second_base, ellipse_pairs
+        _, major_axis, minor_axis = ellipses[1]
+        major_len = np.linalg.norm(major_axis)
+        minor_len = np.linalg.norm(minor_axis)
+        thickness = min(major_len, minor_len)
+        return smooth_cylinder, [on_first_base, on_second_base], ellipse_pairs, thickness
 
     def smooth_branch(self, branch, image):
         self.initialise(branch, image)
@@ -148,9 +151,10 @@ class BranchAnalyser:
         self.aggregated_gaps = []
 
         for indices in self.indices_options:
-            smooth_cylinder, first_base, second_base, gaps = (
+            smooth_cylinder, bases, gaps, thickness = (
                 self.analyse_indices_option(indices, branch, image)
             )
+            first_base, second_base = bases
             score = np.sum(smooth_cylinder)
 
             if score > best_score:
@@ -159,6 +163,7 @@ class BranchAnalyser:
                 self.first_base = self.svd.inverse_transform(first_base)
                 self.second_base = self.svd.inverse_transform(second_base)
                 self.aggregated_gaps = gaps
+                self.thickness = thickness
             elif score == 0:
                 continue
             else:
@@ -168,4 +173,4 @@ class BranchAnalyser:
         for lower, upper in self.aggregated_gaps:
             self.best_cylinder = fill_gaps(lower, upper, self.best_cylinder)
 
-        return self.best_cylinder.astype(int), self.first_base, self.second_base
+        return self.best_cylinder.astype(int), self.first_base, self.second_base, self.thickness

@@ -4,9 +4,9 @@ from tqdm import tqdm
 
 from bronco.modelling.fill_gaps import fill_gaps
 from bronco.modelling.model_branch import BranchAnalyser
-from bronco.modelling.prepare_graph import prepare_graph
+from bronco.modelling.prepare_graph import prepare_graph, assign_thickness
 from bronco.modelling.segment_branch import assign_branch
-
+from bronco.modelling.branch_closing import apply_smoothing_by_node_order
 
 def get_node_order(graph):
     trachea_top_node = max(graph.nodes(), key=lambda node: graph.nodes[node]["o"][0])
@@ -59,18 +59,24 @@ def model_tree(bronco_mask, airways_mask):
             curr_mask[coord1] = 1
             curr_mask[coord2] = 1
             analyser = BranchAnalyser()  # segments=True by default
-            branch_mask, upper_ellipse, lower_ellipse = analyser.smooth_branch(
+            branch_mask, upper_ellipse, lower_ellipse, thickness = analyser.smooth_branch(
                 edge_points, curr_mask
             )
 
             airways_graph.nodes[neighbor]["ellipse"] = lower_ellipse
+            airways_graph.nodes[neighbor]["thickness"] = thickness
             # add the branch to the tree_mask
             tree_mask = np.logical_or(tree_mask, branch_mask)
             smooth_mask = np.logical_or(smooth_mask, tree_mask)
             if node_order.index(node) != 0 and "ellipse" in airways_graph.nodes[node]:
                 prev_ellipse = airways_graph.nodes[node]["ellipse"]
                 smooth_mask = fill_gaps(prev_ellipse, upper_ellipse, smooth_mask)
-    return tree_mask.astype(int), smooth_mask
+
+    airways_graph = assign_thickness(airways_graph, node_order)
+    branches_mask, airways_graph, _ = assign_branch(smooth_mask, airways_graph)
+    
+    new_smooth = apply_smoothing_by_node_order(airways_graph, branches_mask, node_order)
+    return tree_mask.astype(int), new_smooth.astype(int)
 
 
 def smooth_tree(bronco_mask, airways_mask):
