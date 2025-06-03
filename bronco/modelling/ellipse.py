@@ -12,44 +12,46 @@ def are_points_symmetric(points, tol=1e-10):
     # Normalize line direction
     line_vec = points[1] - points[0]
     line_vec /= np.linalg.norm(line_vec)
-    
+
     # Project points onto the line
     projections = np.dot(points - points[0], line_vec)
-    
+
     # Sort points by projection
     sorted_indices = np.argsort(projections)
     sorted_points = points[sorted_indices]
     sorted_proj = projections[sorted_indices]
-    
+
     # Midpoint projection and center point
     mid_proj = (sorted_proj[0] + sorted_proj[-1]) / 2
     center_point = (sorted_points[0] + sorted_points[-1]) / 2
-    
+
     n = len(sorted_points)
     half = n // 2
-    
+
     # Pairwise midpoints of projections
-    pair_mid_proj = (sorted_proj[:half] + sorted_proj[-1:-half-1:-1]) / 2
+    pair_mid_proj = (sorted_proj[:half] + sorted_proj[-1 : -half - 1 : -1]) / 2
     # Pairwise midpoints of points in 2D
-    pair_mid_points = (sorted_points[:half] + sorted_points[-1:-half-1:-1]) / 2
-    
+    pair_mid_points = (sorted_points[:half] + sorted_points[-1 : -half - 1 : -1]) / 2
+
     # Check if all midpoints align with center within tolerance
     proj_check = np.all(np.abs(pair_mid_proj - mid_proj) <= tol)
     point_check = np.all(np.linalg.norm(pair_mid_points - center_point, axis=1) <= tol)
-    
+
     return proj_check and point_check
 
 
 def are_points_collinear(points, tol=1e-8):
     if len(points) < 3:
         return True  # Two or fewer points are always collinear
-    
+
     p1 = points[0]
     p2 = points[1]
-    
+
     for i in range(2, len(points)):
         p3 = points[i]
-        cross_product = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0])
+        cross_product = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (
+            p3[0] - p1[0]
+        )
         if abs(cross_product) > tol:
             return False  # Points are not collinear within tolerance
     return True
@@ -99,7 +101,7 @@ def fit_ellipse_3d(
                 hull = points_2d
                 circle_check = False
         else:
-            hull_obj = ConvexHull(points_2d, qhull_options='QJ')
+            hull_obj = ConvexHull(points_2d, qhull_options="QJ")
             hull = points_2d[hull_obj.vertices]
             circle_check = False
     else:
@@ -126,7 +128,7 @@ def fit_ellipse_3d(
         center = np.mean(hull, axis=0)
         xc, yc = center
         a = b = 1e-10
-    
+
         if hull.shape[0] >= 3:
             try:
                 circle = CircleModel()

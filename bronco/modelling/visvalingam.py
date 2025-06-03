@@ -1,38 +1,11 @@
 import numpy as np
+import heapq
 
 
-def calculate_triangle_areas(points: np.ndarray) -> np.ndarray:
-    """
-    Vectorized calculation of areas for multiple 3D triangles.
-
-    Args:
-        points (numpy.ndarray): Array of shape (N, 3, 3), where each row contains
-                                the coordinates of the three vertices of a triangle.
-
-    Returns:
-        numpy.ndarray: Array of shape (N,) containing the areas of the triangles.
-    """
-    AB = points[:, 1] - points[:, 0]
-    AC = points[:, 2] - points[:, 0]
-    cross_product = np.cross(AB, AC)
-    magnitudes = np.linalg.norm(cross_product, axis=1)
-    areas = 0.5 * magnitudes
-    return areas
-
-
-def prepare_triangles(points: np.ndarray) -> np.ndarray:
-    """
-    Prepare triangles from consecutive points for area calculation in a vectorized way.
-
-    Args:
-        points (numpy.ndarray): Array of 3D points with shape (N, 3).
-
-    Returns:
-        numpy.ndarray: Array of shape (N-2, 3, 3) containing triangles.
-    """
-    # Use slicing to get consecutive triplets of points
-    triangles = np.stack([points[:-2], points[1:-1], points[2:]], axis=1)
-    return triangles
+def calculate_triangle_area(a, b, c):
+    ab = b - a
+    ac = c - a
+    return 0.5 * np.linalg.norm(np.cross(ab, ac))
 
 
 def visvalingam_whyatt_3d(points: np.ndarray, epsilon=0.51) -> np.ndarray:
@@ -49,25 +22,63 @@ def visvalingam_whyatt_3d(points: np.ndarray, epsilon=0.51) -> np.ndarray:
     if len(points) <= 2:
         return points
 
-    while True:
-        triangles = prepare_triangles(points)
-        areas = calculate_triangle_areas(triangles)
+    points = points.copy()
+    N = len(points)
+    mask = np.ones(N, dtype=bool)
+    heap = []
+    prev = np.arange(N)
+    next = np.arange(N)
 
-        # Initialize point_areas with infinity
-        point_areas = np.full(len(points), float("inf"))
-        point_areas[1:-1] = areas
+    # Set up prev/next pointers
+    prev[1:] = np.arange(N - 1)
+    next[:-1] = np.arange(1, N)
+    prev[0] = -1
+    next[-1] = -1
 
-        # Find index of point with smallest area
-        min_area_index = np.argmin(point_areas)
+    # Compute initial areas and heap
+    areas = np.full(N, np.inf)
+    for i in range(1, N - 1):
+        areas[i] = calculate_triangle_area(points[i - 1], points[i], points[i + 1])
+        heapq.heappush(heap, (areas[i], i))
 
-        # Stop if all remaining areas exceed epsilon
-        if point_areas[min_area_index] >= epsilon:
+    while heap:
+        area, idx = heapq.heappop(heap)
+        if not mask[idx]:
+            continue
+        if area >= epsilon:
+            break
+        mask[idx] = False
+
+        # Update neighbors
+        i_prev = prev[idx]
+        i_next = next[idx]
+        if i_prev != -1 and i_next != -1:
+            areas[idx] = np.inf
+            areas[i_prev] = (
+                calculate_triangle_area(
+                    points[prev[i_prev]], points[i_prev], points[i_next]
+                )
+                if prev[i_prev] != -1
+                else np.inf
+            )
+            areas[i_next] = (
+                calculate_triangle_area(
+                    points[i_prev], points[i_next], points[next[i_next]]
+                )
+                if next[i_next] != -1
+                else np.inf
+            )
+            heapq.heappush(heap, (areas[i_prev], i_prev))
+            heapq.heappush(heap, (areas[i_next], i_next))
+            next[i_prev] = i_next
+            prev[i_next] = i_prev
+        elif i_prev != -1:
+            next[i_prev] = i_next
+        elif i_next != -1:
+            prev[i_next] = i_prev
+
+        # Early exit if only two points remain
+        if np.count_nonzero(mask) <= 2:
             break
 
-        # Remove point with smallest area
-        points = np.delete(points, min_area_index, axis=0)
-
-        # If only two points remain, stop
-        if len(points) <= 2:
-            break
-    return points
+    return points[mask]

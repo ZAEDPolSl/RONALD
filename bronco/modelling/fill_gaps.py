@@ -12,16 +12,19 @@ def fill_gaps(upper_ellipse, lower_ellipse, smooth_tree_mask):
 
     all_points = np.unique(np.concatenate([upper_unique, lower_unique], axis=0), axis=0)
     n_points = all_points.shape[0]
-    mask = np.zeros_like(smooth_tree_mask, dtype=bool)
 
     if n_points == 0:
         return smooth_tree_mask.astype(int)
     elif n_points == 1:
+        mask = np.zeros_like(smooth_tree_mask, dtype=bool)
         mask[tuple(all_points[0])] = True
-        return np.logical_or(smooth_tree_mask, mask).astype(int)
+        np.logical_or(smooth_tree_mask, mask, out=smooth_tree_mask)
+        return smooth_tree_mask.astype(int)
 
-    rank = np.linalg.matrix_rank(all_points - all_points.mean(axis=0), tol=1e-5)
+    centered = all_points - all_points.mean(axis=0)
+    rank = np.linalg.matrix_rank(centered, tol=1e-5)
 
+    mask = np.zeros_like(smooth_tree_mask, dtype=bool)
     if rank == 1:
         mask = fill_line_3d(all_points, mask)
     elif rank == 2:
@@ -29,8 +32,8 @@ def fill_gaps(upper_ellipse, lower_ellipse, smooth_tree_mask):
     else:
         mask = fill_volume_3d(all_points, mask)
 
-    filled_mask = np.logical_or(smooth_tree_mask, mask)
-    return filled_mask.astype(int)
+    np.logical_or(smooth_tree_mask, mask, out=smooth_tree_mask)
+    return smooth_tree_mask.astype(int)
 
 
 def fill_line_3d(points, mask):
@@ -39,9 +42,12 @@ def fill_line_3d(points, mask):
     p_max = points.max(axis=0)
     rr, cc, zz = line_nd(p_min, p_max)
     valid = (
-        (rr >= 0) & (rr < mask.shape[0]) &
-        (cc >= 0) & (cc < mask.shape[1]) &
-        (zz >= 0) & (zz < mask.shape[2])
+        (rr >= 0)
+        & (rr < mask.shape[0])
+        & (cc >= 0)
+        & (cc < mask.shape[1])
+        & (zz >= 0)
+        & (zz < mask.shape[2])
     )
     mask[rr[valid], cc[valid], zz[valid]] = True
     return mask
@@ -69,8 +75,10 @@ def fill_line_2d(points_2d, mask, drop_axis, axes_2d):
     p_max = points_2d.max(axis=0)
     rr, cc = line_nd(p_min, p_max)
     valid = (
-        (rr >= 0) & (rr < mask.shape[axes_2d[0]]) &
-        (cc >= 0) & (cc < mask.shape[axes_2d[1]])
+        (rr >= 0)
+        & (rr < mask.shape[axes_2d[0]])
+        & (cc >= 0)
+        & (cc < mask.shape[axes_2d[1]])
     )
     rr, cc = rr[valid], cc[valid]
 
@@ -94,9 +102,11 @@ def fill_polygon_2d(points_2d, mask, drop_axis, axes_2d, all_points):
         return rasterize_polygon(points_2d, mask, drop_axis, axes_2d)
 
     min_bb = np.maximum(np.floor(points_2d.min(axis=0)) - 1, 0).astype(int)
-    max_bb = np.minimum(np.ceil(points_2d.max(axis=0)) + 1, np.array(mask.shape)[axes_2d] - 1).astype(int)
+    max_bb = np.minimum(
+        np.ceil(points_2d.max(axis=0)) + 1, np.array(mask.shape)[axes_2d] - 1
+    ).astype(int)
 
-    x, y = np.mgrid[min_bb[0]:max_bb[0]+1, min_bb[1]:max_bb[1]+1]
+    x, y = np.mgrid[min_bb[0] : max_bb[0] + 1, min_bb[1] : max_bb[1] + 1]
     grid_points = np.vstack((x.ravel(), y.ravel())).T
 
     mask_flat = delaunay.find_simplex(grid_points) >= 0
@@ -104,16 +114,24 @@ def fill_polygon_2d(points_2d, mask, drop_axis, axes_2d, all_points):
 
     # Get valid slices using original 3D points
     slices_with_points = np.unique(np.round(all_points[:, drop_axis]).astype(int))
-    valid_slices = slices_with_points[(slices_with_points >= 0) & (slices_with_points < mask.shape[drop_axis])]
+    valid_slices = slices_with_points[
+        (slices_with_points >= 0) & (slices_with_points < mask.shape[drop_axis])
+    ]
 
     # Loop through slices and assign 2D mask
     for slice_idx in valid_slices:
         if drop_axis == 0:
-            mask[slice_idx, min_bb[0]:max_bb[0]+1, min_bb[1]:max_bb[1]+1] |= mask_flat
+            mask[
+                slice_idx, min_bb[0] : max_bb[0] + 1, min_bb[1] : max_bb[1] + 1
+            ] |= mask_flat
         elif drop_axis == 1:
-            mask[min_bb[0]:max_bb[0]+1, slice_idx, min_bb[1]:max_bb[1]+1] |= mask_flat
+            mask[
+                min_bb[0] : max_bb[0] + 1, slice_idx, min_bb[1] : max_bb[1] + 1
+            ] |= mask_flat
         else:
-            mask[min_bb[0]:max_bb[0]+1, min_bb[1]:max_bb[1]+1, slice_idx] |= mask_flat
+            mask[
+                min_bb[0] : max_bb[0] + 1, min_bb[1] : max_bb[1] + 1, slice_idx
+            ] |= mask_flat
 
     return mask
 
@@ -123,7 +141,9 @@ def rasterize_polygon(points_2d, mask, drop_axis, axes_2d):
     hull_points = points_2d[hull_2d.vertices]
 
     min_bb = np.maximum(np.floor(hull_points.min(axis=0)) - 1, 0).astype(int)
-    max_bb = np.minimum(np.ceil(hull_points.max(axis=0)) + 1, np.array(mask.shape)[axes_2d] - 1).astype(int)
+    max_bb = np.minimum(
+        np.ceil(hull_points.max(axis=0)) + 1, np.array(mask.shape)[axes_2d] - 1
+    ).astype(int)
 
     hull_pts_shifted = hull_points - min_bb
 
@@ -132,7 +152,9 @@ def rasterize_polygon(points_2d, mask, drop_axis, axes_2d):
         hull_pts_shifted[:, 1],
         shape=(max_bb[0] - min_bb[0] + 1, max_bb[1] - min_bb[1] + 1),
     )
-    mask_flat = np.zeros((max_bb[0] - min_bb[0] + 1, max_bb[1] - min_bb[1] + 1), dtype=bool)
+    mask_flat = np.zeros(
+        (max_bb[0] - min_bb[0] + 1, max_bb[1] - min_bb[1] + 1), dtype=bool
+    )
     mask_flat[rr_poly, cc_poly] = True
 
     slices = np.arange(mask.shape[drop_axis])
@@ -149,7 +171,6 @@ def rasterize_polygon(points_2d, mask, drop_axis, axes_2d):
     return mask
 
 
-
 def fill_volume_3d(points, mask):
     """Fill mask for full 3D point cloud using Delaunay triangulation with robust fallback."""
     try:
@@ -160,22 +181,24 @@ def fill_volume_3d(points, mask):
 
     # Bounding box calculation
     min_bb = np.maximum(np.floor(points.min(axis=0)) - 1, 0).astype(int)
-    max_bb = np.minimum(np.ceil(points.max(axis=0)) + 1, np.array(mask.shape) - 1).astype(int)
+    max_bb = np.minimum(
+        np.ceil(points.max(axis=0)) + 1, np.array(mask.shape) - 1
+    ).astype(int)
 
     # Grid generation
     x, y, z = np.mgrid[
-        min_bb[0]:max_bb[0] + 1,
-        min_bb[1]:max_bb[1] + 1,
-        min_bb[2]:max_bb[2] + 1,
+        min_bb[0] : max_bb[0] + 1,
+        min_bb[1] : max_bb[1] + 1,
+        min_bb[2] : max_bb[2] + 1,
     ]
     grid_points = np.vstack((x.ravel(), y.ravel(), z.ravel())).T
 
     # Mask filling
     mask_flat = delaunay.find_simplex(grid_points) >= 0
     mask[
-        min_bb[0]:max_bb[0] + 1,
-        min_bb[1]:max_bb[1] + 1,
-        min_bb[2]:max_bb[2] + 1,
+        min_bb[0] : max_bb[0] + 1,
+        min_bb[1] : max_bb[1] + 1,
+        min_bb[2] : max_bb[2] + 1,
     ] |= mask_flat.reshape(x.shape)
-    
+
     return mask

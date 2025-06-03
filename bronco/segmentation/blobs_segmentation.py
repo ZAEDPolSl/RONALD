@@ -24,7 +24,9 @@ def blobs_segmentation(sitk_image, sitk_lungs):
     direction = sitk_image.GetDirection()
 
     multiply_filter = itk.MultiplyImageFilter[
-        itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension]
+        itk.Image[PixelType, Dimension],
+        itk.Image[PixelType, Dimension],
+        itk.Image[PixelType, Dimension],
     ].New()
     multiply_filter.SetInput1(itk_image)
     multiply_filter.SetInput2(itk_lungs)
@@ -68,13 +70,14 @@ def blobs_segmentation(sitk_image, sitk_lungs):
     enhanced_blobs = multi_scale_filter.GetOutput()
 
     multiply_filter = itk.MultiplyImageFilter[
-    itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension], itk.Image[PixelType, Dimension]
+        itk.Image[PixelType, Dimension],
+        itk.Image[PixelType, Dimension],
+        itk.Image[PixelType, Dimension],
     ].New()
     multiply_filter.SetInput1(enhanced_blobs)
     multiply_filter.SetInput2(itk_lungs)
     multiply_filter.Update()
     enhanced_blobs = multiply_filter.GetOutput()
-
 
     # Rescale intensity for saving as 8-bit image
     OutputPixelType = itk.UC

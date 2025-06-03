@@ -31,6 +31,13 @@ def closest_edge_indices(branch, edge_list, tol=1e-6):
     return min_edge_indices, min_distances
 
 
+def indices_of_kept_points(branch, points):
+    branch_view = branch.view([("", branch.dtype)] * branch.shape[1]).reshape(-1)
+    points_view = points.view([("", points.dtype)] * points.shape[1]).reshape(-1)
+    mask = np.isin(branch_view, points_view)
+    return np.where(mask)[0]
+
+
 def segment_branch(branch: np.ndarray, adaptive=False) -> list:
     """Segment a branch by using the Visvalingam-Whyatt algorithm.
 
@@ -59,12 +66,12 @@ def segment_branch(branch: np.ndarray, adaptive=False) -> list:
         for area in [30.0, 20, 15.0, 10.0, 5.0, 2.0]:
             points = visvalingam_whyatt_3d(branch, area)
             # Get the indices of the points that were kept
-            indices = np.where(np.isin(branch, points).all(axis=1))[0]
+            indices = indices_of_kept_points(branch, points)
             add_unique(indices)
     else:
         points = visvalingam_whyatt_3d(branch, 10.0)
         # Get the indices of the points that were kept
-        indices = np.where(np.isin(branch, points).all(axis=1))[0]
+        indices = indices_of_kept_points(branch, points)
         add_unique(indices)
     return indices_all
 
@@ -84,28 +91,10 @@ def assign_branch(image, graph):
     edge_indices, min_distances = closest_edge_indices(checkpoints, edge_list)
     # Create a new image mask with the same shape as the input image
     new_image = np.zeros_like(image, dtype=int)
-    min_dist_img = np.zeros_like(image, dtype=int)
     # Vectorized assignment to the new_image array
     new_image[checkpoints[:, 0], checkpoints[:, 1], checkpoints[:, 2]] = (
         edge_indices + 1
     )
-    min_dist_img[checkpoints[:, 0], checkpoints[:, 1], checkpoints[:, 2]] = (
-        min_distances
-    )
-    normalized_min_dist_img = np.zeros_like(min_dist_img, dtype=np.float32)
-    # Get unique labels excluding zero
-    unique_labels = np.unique(new_image)
-    unique_labels = unique_labels[unique_labels != 0]  # Exclude zero
+    # No normalization or min_dist_img needed if not used elsewhere
 
-    # Normalize each label separately
-    for label in unique_labels:
-        mask = new_image == label  # Get mask for current label
-        max_val = np.median(min_dist_img[mask])  # Find max distance for this label
-
-        if max_val > 0:  # Avoid division by zero
-            normalized_min_dist_img[mask] = min_dist_img[mask] / max_val
-
-    # Keep zeros unchanged
-    normalized_min_dist_img[new_image == 0] = 0
-
-    return new_image, graph, normalized_min_dist_img
+    return new_image, graph

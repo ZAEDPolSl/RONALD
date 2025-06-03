@@ -130,7 +130,7 @@ class BranchAnalyser:
             cyl = self.points[inside_cylinder]
             cyl_mask = np.zeros(image.shape, dtype=int)
             cyl_mask[cyl[:, 0], cyl[:, 1], cyl[:, 2]] = 1
-            smooth_cylinder = np.logical_or(smooth_cylinder, cyl_mask).astype(int)
+            np.logical_or(smooth_cylinder, cyl_mask, out=smooth_cylinder)
 
             prev_upper = ellipse_points[1]
 
@@ -142,7 +142,12 @@ class BranchAnalyser:
         major_len = np.linalg.norm(major_axis)
         minor_len = np.linalg.norm(minor_axis)
         thickness = min(major_len, minor_len)
-        return smooth_cylinder, [on_first_base, on_second_base], ellipse_pairs, thickness
+        return (
+            smooth_cylinder,
+            [on_first_base, on_second_base],
+            ellipse_pairs,
+            thickness,
+        )
 
     def smooth_branch(self, branch, image):
         self.initialise(branch, image)
@@ -151,8 +156,8 @@ class BranchAnalyser:
         self.aggregated_gaps = []
 
         for indices in self.indices_options:
-            smooth_cylinder, bases, gaps, thickness = (
-                self.analyse_indices_option(indices, branch, image)
+            smooth_cylinder, bases, gaps, thickness = self.analyse_indices_option(
+                indices, branch, image
             )
             first_base, second_base = bases
             score = np.sum(smooth_cylinder)
@@ -173,4 +178,9 @@ class BranchAnalyser:
         for lower, upper in self.aggregated_gaps:
             self.best_cylinder = fill_gaps(lower, upper, self.best_cylinder)
 
-        return self.best_cylinder.astype(int), self.first_base, self.second_base, self.thickness
+        return (
+            self.best_cylinder.astype(int),
+            self.first_base,
+            self.second_base,
+            self.thickness,
+        )
