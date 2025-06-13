@@ -16,7 +16,7 @@ def _close_branch(args):
     return closing(branch_mask, selem)
 
 
-def apply_smoothing_by_node_order(airways_graph, branches_mask, node_order):
+def apply_smoothing_by_node_order(airways_graph, branches_mask, node_order, thick_mult=3):
     """
     Smooth branch masks using morphological closing with a float-compatible ball structuring element.
 
@@ -50,7 +50,7 @@ def apply_smoothing_by_node_order(airways_graph, branches_mask, node_order):
             thickness = edge_data.get("size")
             if mask is None or thickness is None or mask not in branch_masks:
                 continue
-            radius = round(thickness * 3, 1)
+            radius = round(thickness * thick_mult, 1)
             if radius not in selem_cache:
                 selem_cache[radius] = float_ball(radius)
             selem = selem_cache[radius]
