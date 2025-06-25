@@ -8,6 +8,7 @@ from bronco.external.sitk2itk import (
     ConvertItkImageToSimpleItkImage,
     ConvertSimpleItkImageToItkImage,
 )
+from bronco.segmentation.blobs_segmentation import blobs_segmentation
 
 
 def vesselness_filter(sitk_image, sitk_lungs):
@@ -105,5 +106,14 @@ def vessel_segmentation(
 
     vessels_connected = sitk.GetImageFromArray(first_region_mask)
     vessels_connected.CopyInformation(sitk_vessels)
+    vessels_connected = sitk.Cast(vessels_connected, sitk.sitkUInt8)
 
-    return vessels_connected
+    blobs = blobs_segmentation(vessels_connected, sitk_lungs)
+    vessels_final = sitk.Subtract(vessels_connected, blobs)
+    vessels_final = sitk.BinaryThreshold(vessels_final,
+                                         lowerThreshold=1,
+                                         upperThreshold=255,
+                                         insideValue=255,
+                                         outsideValue=0)
+
+    return vessels_final
