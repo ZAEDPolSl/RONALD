@@ -109,6 +109,14 @@ def vessel_segmentation(
     vessels_connected = sitk.Cast(vessels_connected, sitk.sitkUInt8)
 
     blobs = blobs_segmentation(vessels_connected, sitk_lungs)
+    max_val = sitk.GetArrayViewFromImage(blobs).max()
+    blobs = sitk.BinaryDilate(
+        blobs,
+        radius=1,
+        kernel=sitk.sitkBall,
+        foregroundValue=max_val)
+
+    
     vessels_final = sitk.Subtract(vessels_connected, blobs)
     vessels_final = sitk.BinaryThreshold(vessels_final,
                                          lowerThreshold=1,
