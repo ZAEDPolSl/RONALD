@@ -4,7 +4,6 @@ from bronco.external.sitk2itk import ConvertSimpleItkImageToItkImage
 
 
 def blobs_segmentation(sitk_image, sitk_lungs):
-    # fix because blobs are outside(???)
     """
     Perform blob segmentation on a 3D image using ITK.
 
