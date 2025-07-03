@@ -3,7 +3,7 @@ from bronco.external.sitk2itk import ConvertItkImageToSimpleItkImage
 from bronco.external.sitk2itk import ConvertSimpleItkImageToItkImage
 
 
-def blobs_segmentation(sitk_image, sitk_lungs):
+def blobs_segmentation(sitk_image, sitk_lungs, sigma_min=1, sigma_max=5, steps=8):
     """
     Perform blob segmentation on a 3D image using ITK.
 
@@ -59,9 +59,9 @@ def blobs_segmentation(sitk_image, sitk_lungs):
     ].New()
     multi_scale_filter.SetInput(masked_image)
     multi_scale_filter.SetHessianToMeasureFilter(objectness_filter)
-    multi_scale_filter.SetSigmaMinimum(1)
-    multi_scale_filter.SetSigmaMaximum(5)  # Maximum scale
-    multi_scale_filter.SetNumberOfSigmaSteps(8)  # Number of scales
+    multi_scale_filter.SetSigmaMinimum(sigma_min)  # Minimum scale
+    multi_scale_filter.SetSigmaMaximum(sigma_max)  # Maximum scale
+    multi_scale_filter.SetNumberOfSigmaSteps(steps)  # Number of scales
     multi_scale_filter.SetSigmaStepMethodToLogarithmic()
 
     # Run the filter
