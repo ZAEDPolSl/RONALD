@@ -114,4 +114,4 @@ def vessel_segmentation(
 
     vessels_final = sitk.And(vessels_connected, sitk.Not(blobs))
 
-    return vessels_final, blobs
+    return vessels_final
