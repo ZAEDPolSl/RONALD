@@ -16,7 +16,7 @@ def _close_branch(args):
     return closing(branch_mask, selem)
 
 
-def apply_smoothing_by_node_order(airways_graph, branches_mask, node_order, thick_mult=3):
+def apply_smoothing_by_node_order(airways_graph, branches_mask, node_order, thick_mult=2):
     """
     Smooth branch masks using morphological closing with a float-compatible ball structuring element.
 

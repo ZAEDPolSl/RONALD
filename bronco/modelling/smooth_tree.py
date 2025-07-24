@@ -69,24 +69,14 @@ def model_tree(bronco_mask, airways_mask):
     airways_graph = assign_thickness(airways_graph, node_order)
     branches_mask, airways_graph = assign_branch(smooth_mask, airways_graph)
 
-    smooths = []
-    for i in range(6):
-        new_smooth = apply_smoothing_by_node_order(airways_graph, branches_mask, node_order)
-        smooths.append(new_smooth.astype(int))
-    return tree_mask.astype(int), smooths
+    smooth = apply_smoothing_by_node_order(airways_graph, branches_mask, node_order)
+    return smooth
 
 
 def smooth_tree(bronco_mask, airways_mask):
-    tree_mask, smooths = model_tree(bronco_mask, airways_mask)
-    sitk_tree_mask = sitk.GetImageFromArray(tree_mask)
-    sitk_tree_mask = sitk.Cast(sitk_tree_mask, sitk.sitkUInt16)
-    sitk_tree_mask.CopyInformation(bronco_mask)
-
-    smooths = [sitk.GetImageFromArray(smooth_mask) for smooth_mask in smooths]
-    smooths = [sitk.Cast(sm, sitk.sitkUInt16) for sm in smooths]
-    smooths = [sm.CopyInformation(bronco_mask) for sm in smooths]
-    # sitk_smoothed_tree = sitk.GetImageFromArray(smooth_mask)
-    # sitk_smoothed_tree = sitk.Cast(sitk_smoothed_tree, sitk.sitkUInt16)
-    # sitk_smoothed_tree.CopyInformation(bronco_mask
-    # return sitk_smoothed_tree, sitk_tree_mask
-    return smooths, sitk_tree_mask
+    smooth = model_tree(bronco_mask, airways_mask)
+    sitk_smooth = sitk.GetImageFromArray(smooth) 
+    sitk_smooth = sitk.Cast(sitk_smooth, sitk.sitkUInt16)
+    sitk_smooth.CopyInformation(bronco_mask)
+    sitk_smooth = sitk_smooth & bronco_mask
+    return sitk_smooth
