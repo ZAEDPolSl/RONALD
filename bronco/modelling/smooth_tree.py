@@ -77,6 +77,7 @@ def smooth_tree(bronco_mask, airways_mask):
     smooth = model_tree(bronco_mask, airways_mask)
     sitk_smooth = sitk.GetImageFromArray(smooth) 
     sitk_smooth = sitk.Cast(sitk_smooth, sitk.sitkUInt16)
+    bronco_mask = sitk.Cast(bronco_mask, sitk.sitkUInt16)
     sitk_smooth.CopyInformation(bronco_mask)
     sitk_smooth = sitk_smooth & bronco_mask
     return sitk_smooth
