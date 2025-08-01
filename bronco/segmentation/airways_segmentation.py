@@ -22,6 +22,69 @@ from bronco.processing.connected_components import (
 )
 
 
+def remove_leaked_airways(sitk_airways, sitk_lungs, sitk_trachea):
+    sitk_airways = sitk.Cast(sitk_airways > 0, sitk.sitkUInt8)
+    sitk_lungs = sitk.Cast(sitk_lungs > 0, sitk.sitkUInt8)
+    sitk_trachea = sitk.Cast(sitk_trachea > 0, sitk.sitkUInt8)
+
+    airways_in_lungs = sitk.And(sitk_airways, sitk_lungs)
+    airways_outside = sitk.And(sitk_airways, sitk.Not(sitk_lungs))
+    combined = sitk.Or(sitk_trachea, airways_outside)
+
+    cc_filter = sitk.ConnectedComponentImageFilter()
+    labeled = cc_filter.Execute(combined)
+    labeled_np = sitk.GetArrayFromImage(labeled)
+
+    trachea_np = sitk.GetArrayFromImage(sitk_trachea)
+    trachea_labels = labeled_np[trachea_np > 0]
+    if len(trachea_labels) == 0:
+        raise RuntimeError("No trachea found in combined mask!")
+    trachea_label = np.bincount(trachea_labels).argmax()
+
+    # Keep only the outside-lung airways connected to the trachea
+    connected_outside = (labeled_np == trachea_label) & (
+        sitk.GetArrayFromImage(airways_outside) > 0
+    )
+    connected_outside_img = sitk.GetImageFromArray(connected_outside.astype(np.uint8))
+    connected_outside_img.CopyInformation(sitk_airways)
+
+    # Combine airways inside lungs and connected outside components
+    result = sitk.Or(airways_in_lungs, connected_outside_img)
+    return result
+
+
+def constrained_airway_dilation(sitk_airways, sitk_lung_mask, kernel_radius=(3, 3, 3)):
+    """
+    Dilate airways with regional constraints and erosion buffer,
+    ensuring original seed voxels are preserved.
+    """
+    lung_array = sitk.GetArrayFromImage(sitk_lung_mask)
+    airway_array = sitk.GetArrayFromImage(sitk_airways)
+
+    result_array = np.zeros_like(airway_array)
+
+    for label_value in np.unique(lung_array):
+        region_mask_np = lung_array == label_value
+        seed_np = (airway_array > 0) & region_mask_np
+
+        if np.any(seed_np):
+            region_mask = sitk.GetImageFromArray(region_mask_np.astype(np.uint8))
+            seed_img = sitk.GetImageFromArray(seed_np.astype(np.uint8))
+
+            for img in [region_mask, seed_img]:
+                img.CopyInformation(sitk_airways)
+            dilated = sitk.BinaryDilate(
+                seed_img, kernelRadius=kernel_radius, foregroundValue=1
+            )
+            clipped_dilation = sitk.Mask(dilated, region_mask)
+            restored = sitk.Or(clipped_dilation, seed_img)
+            result_array |= sitk.GetArrayFromImage(restored)
+
+    sitk_result = sitk.GetImageFromArray(result_array.astype(np.uint8))
+    sitk_result.CopyInformation(sitk_airways)
+    return sitk_result
+
+
 def fast_marching(sitk_init, seed_point, stopping_value=60):
     if type(seed_point) is not list:
         seed_points = [seed_point]
@@ -304,7 +367,11 @@ def airways_segmentation(
     # airways walls extraction
     sitk_airways = sitk.Cast(sitk_airways, sitk.sitkUInt8)
     sitk_vessels = sitk.Cast(sitk_vessels_rough > 0, sitk.sitkUInt8)
-    sitk_airways_dilated = sitk.BinaryDilate(sitk_airways, kernelRadius=(3, 3, 3))
+    sitk_airways_cleaned = remove_leaked_airways(sitk_airways, sitk_lungs, sitk_trachea)
+    sitk_airways_dilated = constrained_airway_dilation(
+        sitk_airways_cleaned, sitk_lungs, kernel_radius=(3, 3, 3)
+    )
+
     sitk_walls = sitk_airways_dilated * sitk_vessels
     sitk_walls_closed = sitk.BinaryMorphologicalClosing(sitk_walls, (3, 6, 6))
     sitk_walls_filled = per_slice_hole_removal(sitk_walls_closed, sitk_airways)
