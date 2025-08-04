@@ -1,5 +1,6 @@
 import networkx as nx
 import SimpleITK as sitk
+import numpy as np
 from skimage.morphology import skeletonize
 
 from bronco.external.sknw import build_sknw
@@ -58,6 +59,7 @@ def get_skeleton(mask):
 
 
 def prepare_graph(mask):
+    mask = keep_largest_component_mask(mask)
     skeleton = get_skeleton(mask)
     skeleton = clean_airways_graph(skeleton)
     return skeleton
@@ -86,3 +88,18 @@ def assign_thickness(G, node_order):
             data["size"] = 0.0  # or None
 
     return G
+
+
+def keep_largest_component_mask(mask):
+    cc = sitk.ConnectedComponent(mask)
+    arr = sitk.GetArrayFromImage(cc)
+    labels, counts = np.unique(arr, return_counts=True)
+    mask_nonzero = labels != 0
+    labels = labels[mask_nonzero]
+    counts = counts[mask_nonzero]
+    if len(counts) == 0:
+        return mask
+    main_label = labels[np.argmax(counts)]
+    largest = sitk.GetImageFromArray((arr == main_label).astype(np.uint8))
+    largest.CopyInformation(mask)
+    return largest

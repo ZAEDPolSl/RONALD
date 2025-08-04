@@ -4,7 +4,11 @@ from tqdm import tqdm
 
 from bronco.modelling.fill_gaps import fill_gaps
 from bronco.modelling.model_branch import BranchAnalyser
-from bronco.modelling.prepare_graph import prepare_graph, assign_thickness
+from bronco.modelling.prepare_graph import (
+    prepare_graph,
+    assign_thickness,
+    keep_largest_component_mask,
+)
 from bronco.modelling.segment_branch import assign_branch
 from bronco.modelling.branch_closing import apply_smoothing_by_node_order
 
@@ -28,8 +32,9 @@ def get_node_order(graph):
 
 
 def model_tree(bronco_mask, airways_mask):
-    airways_graph = prepare_graph(airways_mask)
+    airways_graph = prepare_graph(bronco_mask)
     bronco_mask_arr = sitk.GetArrayFromImage(bronco_mask)
+    airways_mask = keep_largest_component_mask(airways_mask)
     airways_mask_arr = sitk.GetArrayFromImage(airways_mask)
     tree_mask = np.zeros_like(bronco_mask_arr)
     smooth_mask = np.zeros_like(bronco_mask_arr)
@@ -75,7 +80,7 @@ def model_tree(bronco_mask, airways_mask):
 
 def smooth_tree(bronco_mask, airways_mask):
     smooth = model_tree(bronco_mask, airways_mask)
-    sitk_smooth = sitk.GetImageFromArray(smooth) 
+    sitk_smooth = sitk.GetImageFromArray(smooth)
     sitk_smooth = sitk.Cast(sitk_smooth, sitk.sitkUInt16)
     bronco_mask = sitk.Cast(bronco_mask, sitk.sitkUInt16)
     sitk_smooth.CopyInformation(bronco_mask)
