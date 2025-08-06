@@ -377,15 +377,15 @@ def airways_segmentation(
     sitk_walls_filled = per_slice_hole_removal(sitk_walls_closed, sitk_airways)
 
     # remove walls from the filled image
-    sitk_walls_filled = sitk_walls_filled - sitk_walls
+    sitk_filled = sitk_walls_filled - sitk_walls
 
     if path_visualisations is not None:
         images = []
-        image = sitk.GetArrayFromImage(sitk_walls_filled)
+        image = sitk.GetArrayFromImage(sitk_filled)
         images.append(image)
 
-    sitk_airways = sitk_walls_filled * sitk_airways
+    sitk_airways = sitk_filled * sitk_airways
 
     # sitk_airways = sitk_airways + 2 * sitk_walls
 
-    return sitk_airways, sitk_walls, sitk_trachea  # , sitk_vessels
+    return sitk_airways, sitk_walls, sitk_trachea, sitk_walls_filled

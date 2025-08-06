@@ -155,6 +155,8 @@ class BranchAnalyser:
         self.best_cylinder = np.ones(image.shape, dtype=int) * (-1)
         self.aggregated_gaps = []
 
+        no_improve_count = 0  # Counter for consecutive non-improving iterations
+
         for indices in self.indices_options:
             smooth_cylinder, bases, gaps, thickness = self.analyse_indices_option(
                 indices, branch, image
@@ -169,10 +171,13 @@ class BranchAnalyser:
                 self.second_base = self.svd.inverse_transform(second_base)
                 self.aggregated_gaps = gaps
                 self.thickness = thickness
+                no_improve_count = 0
             elif score == 0:
                 continue
             else:
-                break
+                no_improve_count += 1
+                if no_improve_count >= 2:
+                    break
 
         # Only fill gaps once using saved best-cylinder's ellipse pairs
         for lower, upper in self.aggregated_gaps:

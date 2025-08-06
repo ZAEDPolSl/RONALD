@@ -63,7 +63,7 @@ def segment_branch(branch: np.ndarray, adaptive=False) -> list:
     if adaptive:
         add_unique(np.array([0, len(branch) - 1]))  # Add first and last point indices
 
-        for area in [30.0, 20, 15.0, 10.0, 5.0, 2.0]:
+        for area in [20.0, 15.0, 10.0, 5.0, 2.0, 1.0]:
             points = visvalingam_whyatt_3d(branch, area)
             # Get the indices of the points that were kept
             indices = indices_of_kept_points(branch, points)
