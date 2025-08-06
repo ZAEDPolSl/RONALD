@@ -7,7 +7,6 @@ from bronco.modelling.model_branch import BranchAnalyser
 from bronco.modelling.prepare_graph import (
     prepare_graph,
     assign_thickness,
-    keep_largest_component_mask,
 )
 from bronco.modelling.segment_branch import assign_branch
 from bronco.modelling.branch_closing import apply_smoothing_by_node_order
@@ -29,6 +28,33 @@ def get_node_order(graph):
     # Sort nodes by distance
     sorted_nodes = sorted(graph.nodes(), key=lambda node: distances[node])
     return sorted_nodes
+
+
+def add_connected_airways(smooth_mask, airways_mask_arr):
+    """
+    Add only those components from airways_mask_arr that are connected to smooth_mask.
+    Returns the updated mask.
+    """
+    # Label connected components in airways_mask_arr
+    sitk_airways_mask = sitk.GetImageFromArray(airways_mask_arr.astype(np.uint8))
+    cc_filter = sitk.ConnectedComponentImageFilter()
+    labeled = cc_filter.Execute(sitk_airways_mask)
+    labeled_np = sitk.GetArrayFromImage(labeled)
+
+    # Find all labels except background
+    labels = np.unique(labeled_np)
+    labels = labels[labels != 0]
+
+    # Find overlap for each label (vectorized)
+    smooth_mask_bool = smooth_mask.astype(bool)
+    final_mask = smooth_mask.copy()
+    for label in labels:
+        comp = labeled_np == label
+        # Vectorized overlap check
+        if np.any(smooth_mask_bool & comp):
+            final_mask = np.logical_or(final_mask, comp)
+
+    return final_mask.astype(np.uint8)
 
 
 def model_tree(bronco_mask, airways_mask):
@@ -69,7 +95,8 @@ def model_tree(bronco_mask, airways_mask):
                 prev_ellipse = airways_graph.nodes[node]["ellipse"]
                 smooth_mask = fill_gaps(prev_ellipse, upper_ellipse, smooth_mask)
 
-    np.logical_or(smooth_mask, airways_mask_arr, out=smooth_mask)
+    # Only add airways_mask_arr components that overlap with smooth_mask
+    smooth_mask = add_connected_airways(smooth_mask, airways_mask_arr)
     airways_graph = assign_thickness(airways_graph, node_order)
     branches_mask, airways_graph = assign_branch(smooth_mask, airways_graph)
 
@@ -84,6 +111,5 @@ def smooth_tree(bronco_mask, airways_mask):
     bronco_mask = sitk.Cast(bronco_mask, sitk.sitkUInt16)
     airways_mask = sitk.Cast(airways_mask, sitk.sitkUInt16)
     sitk_smooth.CopyInformation(bronco_mask)
-    sitk_smooth = sitk_smooth | airways_mask
     sitk_smooth = sitk_smooth & bronco_mask
     return sitk_smooth
