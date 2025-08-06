@@ -87,6 +87,3 @@ def smooth_tree(bronco_mask, airways_mask):
     sitk_smooth = sitk_smooth | airways_mask
     sitk_smooth = sitk_smooth & bronco_mask
     return sitk_smooth
-
-
-ą
