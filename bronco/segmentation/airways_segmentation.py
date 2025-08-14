@@ -310,7 +310,7 @@ def airways_segmentation(
     sitk_trachea_processed = sitk_trachea * sitk_bbv_scaffolding
 
     # create second speed image for level set segmentation
-    display("\t2st speed image component preparation...", verbose)
+    display("\t2nd speed image component preparation...", verbose)
     sitk_bbv_sato = sato_filter(sitk_bbv_scaffolding)
 
     # create joined speed image for level set segmentation
@@ -336,7 +336,8 @@ def airways_segmentation(
     _sitk_air = sitk.CurvatureAnisotropicDiffusion(sitk_air)
     sitk_air_value_image = _sitk_air * sitk.Cast(sitk_trachea, sitk.sitkFloat32)
     air_value_image = sitk.GetArrayFromImage(sitk_air_value_image)
-    air_values = air_value_image[air_value_image < -500]
+    air_threshold = min(-700, thresholds[1])
+    air_values = air_value_image[air_value_image < air_threshold]
     # threshold based on the mean intensity of voxels in the trachea
     air_values = air_values[~np.isnan(air_values)]
     if len(air_values) == 0:
@@ -357,13 +358,11 @@ def airways_segmentation(
     sitk_airways = sitk.GetImageFromArray(image_level_set)
     sitk_airways.CopyInformation(sitk_image)
     sitk_airways = sitk.Cast(sitk_airways > 0, sitk.sitkInt16)
-
     # find the segmented airways in all elements
     display("\tAirways selection...", verbose)
     sitk_airways, iou = find_most_similar_connected_component(
         sitk_airways, sitk_trachea
     )
-
     # airways walls extraction
     sitk_airways = sitk.Cast(sitk_airways, sitk.sitkUInt8)
     sitk_vessels = sitk.Cast(sitk_vessels_rough > 0, sitk.sitkUInt8)

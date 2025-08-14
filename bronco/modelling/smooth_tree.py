@@ -8,6 +8,7 @@ from bronco.modelling.prepare_graph import (
     prepare_graph,
     assign_thickness,
 )
+from bronco.modelling.kimimaro_graph import prepare_graph_kimimaro
 from bronco.modelling.segment_branch import assign_branch
 from bronco.modelling.branch_closing import apply_smoothing_by_node_order
 
@@ -59,6 +60,16 @@ def add_connected_airways(smooth_mask, airways_mask_arr):
 
 def model_tree(bronco_mask, airways_mask):
     airways_graph = prepare_graph(bronco_mask)
+
+    # Check if graph has too many nodes and switch to kimimaro if needed
+    num_nodes = airways_graph.number_of_nodes()
+    if num_nodes > 1000:
+        print(
+            f"Graph has {num_nodes} nodes (>1000), switching to kimimaro for better handling..."
+        )
+        airways_graph = prepare_graph_kimimaro(bronco_mask, aggressive=True)
+        print(f"Kimimaro graph has {airways_graph.number_of_nodes()} nodes")
+
     bronco_mask_arr = sitk.GetArrayFromImage(bronco_mask)
     airways_mask_arr = sitk.GetArrayFromImage(airways_mask)
     tree_mask = np.zeros_like(bronco_mask_arr)
@@ -67,7 +78,8 @@ def model_tree(bronco_mask, airways_mask):
     node_to_order = {node: idx for idx, node in enumerate(node_order)}
     branches_mask, airways_graph = assign_branch(bronco_mask_arr, airways_graph)
 
-    for node in tqdm(node_order):
+    print(f"Processing {len(node_order)} nodes for tree modeling...")
+    for node in tqdm(node_order, desc="Modeling tree"):
         for neighbor in airways_graph.neighbors(node):
             if node_to_order[neighbor] < node_to_order[node]:
                 continue
@@ -95,11 +107,13 @@ def model_tree(bronco_mask, airways_mask):
                 prev_ellipse = airways_graph.nodes[node]["ellipse"]
                 smooth_mask = fill_gaps(prev_ellipse, upper_ellipse, smooth_mask)
 
+    print("Adding connected airways...")
     # Only add airways_mask_arr components that overlap with smooth_mask
     smooth_mask = add_connected_airways(smooth_mask, airways_mask_arr)
     airways_graph = assign_thickness(airways_graph, node_order)
     branches_mask, airways_graph = assign_branch(smooth_mask, airways_graph)
 
+    print("Applying final smoothing...")
     smooth = apply_smoothing_by_node_order(airways_graph, branches_mask, node_order)
     return smooth
 
