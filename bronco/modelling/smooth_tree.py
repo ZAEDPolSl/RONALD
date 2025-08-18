@@ -106,7 +106,6 @@ def model_tree(bronco_mask, airways_mask):
             if node_to_order[node] != 0 and "ellipse" in airways_graph.nodes[node]:
                 prev_ellipse = airways_graph.nodes[node]["ellipse"]
                 smooth_mask = fill_gaps(prev_ellipse, upper_ellipse, smooth_mask)
-
     print("Adding connected airways...")
     # Only add airways_mask_arr components that overlap with smooth_mask
     smooth_mask = add_connected_airways(smooth_mask, airways_mask_arr)

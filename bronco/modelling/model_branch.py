@@ -32,7 +32,7 @@ class BranchAnalyser:
         return points[height_bounds_check]
 
     def prepare_branch_svd(self, points):
-        branch_points = densify_point_cloud(points, factor=250)
+        branch_points = densify_point_cloud(points, factor=100)
         self.svd = PCA(n_components=3)
         self.svd.fit(branch_points)
         self.densified_transformed = self.svd.transform(branch_points)

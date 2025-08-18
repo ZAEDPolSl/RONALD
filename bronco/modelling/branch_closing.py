@@ -94,7 +94,7 @@ def apply_smoothing_by_node_order(
     # Prepare bounding box tasks
     bbox_tasks = []
     for branch_mask, radius in tasks.values():
-        bbox = _get_branch_bbox(branch_mask, padding=int(radius) + 2)
+        bbox = _get_branch_bbox(branch_mask, padding=int(radius) + 15)
         if bbox is None:
             continue
 
