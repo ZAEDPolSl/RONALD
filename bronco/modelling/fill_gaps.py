@@ -25,9 +25,9 @@ def fill_gaps(upper_ellipse, lower_ellipse, smooth_tree_mask):
     rank = np.linalg.matrix_rank(centered, tol=1e-5)
 
     mask = np.zeros_like(smooth_tree_mask, dtype=bool)
-    if rank == 1:
+    if rank == 1 or n_points <= 2:
         mask = fill_line_3d(all_points, mask)
-    elif rank == 2:
+    elif rank == 2 or n_points == 3:
         mask = fill_plane_3d(all_points, mask, all_points)
     else:
         mask = fill_volume_3d(all_points, mask)
@@ -95,6 +95,10 @@ def fill_line_2d(points_2d, mask, drop_axis, axes_2d):
 
 
 def fill_polygon_2d(points_2d, mask, drop_axis, axes_2d, all_points):
+    # Qhull (ConvexHull/Delaunay) needs at least 3 points for 2D hull, 4 for 2D Delaunay
+    if points_2d.shape[0] < 4:
+        # Not enough points for Delaunay triangulation, fallback to rasterization
+        return rasterize_polygon(points_2d, mask, drop_axis, axes_2d)
     try:
         hull_2d = ConvexHull(points_2d, qhull_options="QJ")
         delaunay = Delaunay(points_2d[hull_2d.vertices], qhull_options="QJ")
@@ -137,6 +141,10 @@ def fill_polygon_2d(points_2d, mask, drop_axis, axes_2d, all_points):
 
 
 def rasterize_polygon(points_2d, mask, drop_axis, axes_2d):
+    # ConvexHull needs at least 3 points in 2D
+    if points_2d.shape[0] < 3:
+        # Not enough points to form a polygon, return mask unchanged
+        return mask
     hull_2d = ConvexHull(points_2d, qhull_options="QJ")
     hull_points = points_2d[hull_2d.vertices]
 
@@ -162,11 +170,11 @@ def rasterize_polygon(points_2d, mask, drop_axis, axes_2d):
     dim1_indices = np.arange(min_bb[1], max_bb[1] + 1)
 
     if drop_axis == 0:
-        mask[np.ix_(slices, dim0_indices, dim1_indices)] |= mask_flat
+        mask[np.ix_(slices, dim0_indices, dim1_indices)] |= mask_flat[None, :, :]
     elif drop_axis == 1:
-        mask[np.ix_(dim0_indices, slices, dim1_indices)] |= mask_flat
+        mask[np.ix_(dim0_indices, slices, dim1_indices)] |= mask_flat[:, None, :]
     else:
-        mask[np.ix_(dim0_indices, dim1_indices, slices)] |= mask_flat
+        mask[np.ix_(dim0_indices, dim1_indices, slices)] |= mask_flat[:, :, None]
 
     return mask
 
@@ -175,30 +183,29 @@ def fill_volume_3d(points, mask):
     """Fill mask for full 3D point cloud using Delaunay triangulation with robust fallback."""
     try:
         delaunay = Delaunay(points, qhull_options="QJ0.5")
+        # Bounding box calculation
+        min_bb = np.maximum(np.floor(points.min(axis=0)) - 1, 0).astype(int)
+        max_bb = np.minimum(
+            np.ceil(points.max(axis=0)) + 1, np.array(mask.shape) - 1
+        ).astype(int)
+        # Grid generation
+        x, y, z = np.mgrid[
+            min_bb[0] : max_bb[0] + 1,
+            min_bb[1] : max_bb[1] + 1,
+            min_bb[2] : max_bb[2] + 1,
+        ]
+        grid_points = np.vstack((x.ravel(), y.ravel(), z.ravel())).T
+        # Mask filling
+        mask_flat = delaunay.find_simplex(grid_points) >= 0
+        mask[
+            min_bb[0] : max_bb[0] + 1,
+            min_bb[1] : max_bb[1] + 1,
+            min_bb[2] : max_bb[2] + 1,
+        ] |= mask_flat.reshape(x.shape)
     except Exception:
-        hull = ConvexHull(points, qhull_options="QJ0.5")
-        delaunay = Delaunay(points[hull.vertices], qhull_options="QJ0.5")
-
-    # Bounding box calculation
-    min_bb = np.maximum(np.floor(points.min(axis=0)) - 1, 0).astype(int)
-    max_bb = np.minimum(
-        np.ceil(points.max(axis=0)) + 1, np.array(mask.shape) - 1
-    ).astype(int)
-
-    # Grid generation
-    x, y, z = np.mgrid[
-        min_bb[0] : max_bb[0] + 1,
-        min_bb[1] : max_bb[1] + 1,
-        min_bb[2] : max_bb[2] + 1,
-    ]
-    grid_points = np.vstack((x.ravel(), y.ravel(), z.ravel())).T
-
-    # Mask filling
-    mask_flat = delaunay.find_simplex(grid_points) >= 0
-    mask[
-        min_bb[0] : max_bb[0] + 1,
-        min_bb[1] : max_bb[1] + 1,
-        min_bb[2] : max_bb[2] + 1,
-    ] |= mask_flat.reshape(x.shape)
-
+        # Fallback: just mark the points
+        for p in points:
+            idx = tuple(np.round(p).astype(int))
+            if all(0 <= idx[d] < mask.shape[d] for d in range(3)):
+                mask[idx] = True
     return mask
