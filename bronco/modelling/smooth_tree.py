@@ -63,9 +63,9 @@ def model_tree(bronco_mask, airways_mask):
 
     # Check if graph has too many nodes and switch to kimimaro if needed
     num_nodes = airways_graph.number_of_nodes()
-    if num_nodes > 1000:
+    if num_nodes > 211:
         print(
-            f"Graph has {num_nodes} nodes (>1000), switching to kimimaro for better handling..."
+            f"Graph has {num_nodes} nodes (>211), switching to kimimaro for better handling..."
         )
         airways_graph = prepare_graph_kimimaro(bronco_mask, aggressive=True)
         print(f"Kimimaro graph has {airways_graph.number_of_nodes()} nodes")
