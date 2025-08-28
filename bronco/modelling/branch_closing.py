@@ -94,7 +94,7 @@ def apply_smoothing_by_node_order(
     # Prepare bounding box tasks
     bbox_tasks = []
     for branch_mask, radius in tasks.values():
-        bbox = _get_branch_bbox(branch_mask, padding=int(radius) + 15)
+        bbox = _get_branch_bbox(branch_mask, padding=int(radius) + 10)
         if bbox is None:
             continue
 
@@ -112,7 +112,7 @@ def apply_smoothing_by_node_order(
     num_tasks = len(bbox_tasks)
 
     # Choose processing method based on memory estimate
-    use_parallel = estimated_memory_mb < 2000 and num_tasks < 500
+    use_parallel = estimated_memory_mb < 1500 and num_tasks < 250
 
     if use_parallel:
         print(f"Parallel processing: {num_tasks} tasks, ~{estimated_memory_mb:.1f}MB")
