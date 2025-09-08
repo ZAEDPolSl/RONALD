@@ -9,9 +9,10 @@ from bronco.modelling.segment_branch import segment_branch
 
 
 class BranchAnalyser:
-    def __init__(self, eps=1e-10, segments=True):
+    def __init__(self, eps=1e-10, segments=True, verbose=False):
         self.eps = eps
         self.segments = segments
+        self.verbose = verbose
         self.svd = None
         self.indices_options = []
         self.points = None
@@ -32,20 +33,31 @@ class BranchAnalyser:
         return points[height_bounds_check]
 
     def prepare_branch_svd(self, points):
+        if self.verbose:
+            print("  Preparing branch SVD...")
         branch_points = densify_point_cloud(points, factor=100)
         self.svd = PCA(n_components=3)
         self.svd.fit(branch_points)
         self.densified_transformed = self.svd.transform(branch_points)
         self.transformed_points = self.svd.transform(points)
+        if self.verbose:
+            print(f"  SVD prepared: {len(points)} points transformed")
 
     def separate_branch(self, transformed_endpoints):
         transformed_points = self.densified_transformed
+        if self.verbose:
+            print("  Separating branch at endpoints...")
+
         if self.segments:
             transformed_points = self.between_endpoints(
                 transformed_points,
                 transformed_endpoints[0, :],
                 transformed_endpoints[1, :],
             )
+            if self.verbose:
+                print(
+                    f"  Filtered to {len(transformed_points)} points between endpoints"
+                )
 
         first_val = transformed_endpoints[0, 0]
         second_val = transformed_endpoints[1, 0]
@@ -56,6 +68,11 @@ class BranchAnalyser:
 
         points_first = transformed_points[mask_first]
         points_second = transformed_points[mask_second]
+
+        if self.verbose:
+            print(
+                f"  First base: {len(points_first)} points, Second base: {len(points_second)} points"
+            )
 
         ellipse1 = f_el(points_first, transformed_endpoints[0, :])
         ellipse2 = f_el(points_second, transformed_endpoints[1, :])
@@ -96,19 +113,35 @@ class BranchAnalyser:
         )
 
     def initialise(self, branch, image):
+        if self.verbose:
+            print("  Initializing branch analysis...")
         self.points = np.argwhere(image == 1)
+        if self.verbose:
+            print(f"  Found {len(self.points)} points in branch mask")
         self.prepare_branch_svd(self.points)
 
         if self.segments:
+            if self.verbose:
+                print("  Segmenting branch...")
             self.indices_options = segment_branch(branch, adaptive=True)
+            if self.verbose:
+                print(f"  Generated {len(self.indices_options)} segmentation options")
         else:
             self.indices_options = [np.array([0, -1])]
+            if self.verbose:
+                print("  Using single segment for branch (endpoints only)")
 
     def analyse_indices_option(self, indices, branch, image):
+        if self.verbose:
+            print(f"  Analyzing branch option with {len(indices)} segments...")
+
         smooth_cylinder = np.zeros(image.shape, dtype=int)
         ellipse_pairs = []
 
         for i in range(len(indices) - 1):
+            if self.verbose and len(indices) > 2:
+                print(f"    Processing segment {i+1}/{len(indices)-1}...")
+
             if (
                 np.all(branch[indices[i] + 1] == branch[indices[i + 1] - 1])
                 or indices[i] != 0
@@ -132,6 +165,9 @@ class BranchAnalyser:
             cyl_mask[cyl[:, 0], cyl[:, 1], cyl[:, 2]] = 1
             np.logical_or(smooth_cylinder, cyl_mask, out=smooth_cylinder)
 
+            if self.verbose:
+                print(f"    Segment {i+1}: Added {np.sum(cyl_mask)} points to cylinder")
+
             prev_upper = ellipse_points[1]
 
             if i == 0:
@@ -142,6 +178,12 @@ class BranchAnalyser:
         major_len = np.linalg.norm(major_axis)
         minor_len = np.linalg.norm(minor_axis)
         thickness = min(major_len, minor_len)
+
+        if self.verbose:
+            print(
+                f"  Branch thickness: {thickness:.2f}, total points: {np.sum(smooth_cylinder)}"
+            )
+
         return (
             smooth_cylinder,
             [on_first_base, on_second_base],
@@ -150,6 +192,9 @@ class BranchAnalyser:
         )
 
     def smooth_branch(self, branch, image):
+        if self.verbose:
+            print("  Starting branch smoothing...")
+
         self.initialise(branch, image)
         best_score = -1
         self.best_cylinder = np.ones(image.shape, dtype=int) * (-1)
@@ -157,14 +202,24 @@ class BranchAnalyser:
 
         no_improve_count = 0  # Counter for consecutive non-improving iterations
 
-        for indices in self.indices_options:
+        for idx, indices in enumerate(self.indices_options):
+            if self.verbose:
+                print(f"  Trying branch option {idx+1}/{len(self.indices_options)}...")
+
             smooth_cylinder, bases, gaps, thickness = self.analyse_indices_option(
                 indices, branch, image
             )
             first_base, second_base = bases
             score = np.sum(smooth_cylinder)
 
+            if self.verbose:
+                print(f"  Option {idx+1} score: {score} points")
+
             if score > best_score:
+                if self.verbose:
+                    print(
+                        f"  Found better option! Score improved from {best_score} to {score}"
+                    )
                 best_score = score
                 self.best_cylinder = smooth_cylinder
                 self.first_base = self.svd.inverse_transform(first_base)
@@ -173,15 +228,29 @@ class BranchAnalyser:
                 self.thickness = thickness
                 no_improve_count = 0
             elif score == 0:
+                if self.verbose:
+                    print("  Skipping option with zero score")
                 continue
             else:
                 no_improve_count += 1
                 if no_improve_count >= 2:
+                    if self.verbose:
+                        print(
+                            f"  No improvement for {no_improve_count} iterations, stopping early"
+                        )
                     break
 
         # Only fill gaps once using saved best-cylinder's ellipse pairs
+        if self.verbose and self.aggregated_gaps:
+            print(f"  Filling {len(self.aggregated_gaps)} gaps between segments...")
+
         for lower, upper in self.aggregated_gaps:
             self.best_cylinder = fill_gaps(lower, upper, self.best_cylinder)
+
+        if self.verbose:
+            print(
+                f"  Branch smoothing complete: {np.sum(self.best_cylinder)} points in final model"
+            )
 
         return (
             self.best_cylinder.astype(int),

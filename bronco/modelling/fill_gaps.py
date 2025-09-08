@@ -181,28 +181,85 @@ def rasterize_polygon(points_2d, mask, drop_axis, axes_2d):
 
 def fill_volume_3d(points, mask):
     """Fill mask for full 3D point cloud using Delaunay triangulation with robust fallback."""
+    n_points = points.shape[0]
+
+    # Skip Delaunay if we don't have enough points
+    if n_points < 5:
+        # Fallback: just mark the points
+        for p in points:
+            idx = tuple(np.round(p).astype(int))
+            if all(0 <= idx[d] < mask.shape[d] for d in range(3)):
+                mask[idx] = True
+        return mask
+
+    # Calculate the volume of the bounding box
+    min_bb = np.maximum(np.floor(points.min(axis=0)) - 1, 0).astype(int)
+    max_bb = np.minimum(
+        np.ceil(points.max(axis=0)) + 1, np.array(mask.shape) - 1
+    ).astype(int)
+
+    # Calculate the volume of the bounding box
+    bbox_volume = np.prod([max_bb[i] - min_bb[i] + 1 for i in range(3)])
+
+    # If the volume is too large, use a simpler approach
+    if bbox_volume > 20_000_000:  # 20 million voxels threshold
+        # Fallback: just mark the convex hull edges
+        try:
+            hull = ConvexHull(points)
+            for simplex in hull.simplices:
+                for i in range(3):
+                    for j in range(i + 1, 4):
+                        p1 = points[simplex[i]]
+                        p2 = points[simplex[j]]
+                        rr, cc, zz = line_nd(p1, p2)
+                        valid = (
+                            (rr >= 0)
+                            & (rr < mask.shape[0])
+                            & (cc >= 0)
+                            & (cc < mask.shape[1])
+                            & (zz >= 0)
+                            & (zz < mask.shape[2])
+                        )
+                        mask[rr[valid], cc[valid], zz[valid]] = True
+        except Exception:
+            # If even that fails, just mark the points
+            for p in points:
+                idx = tuple(np.round(p).astype(int))
+                if all(0 <= idx[d] < mask.shape[d] for d in range(3)):
+                    mask[idx] = True
+        return mask
+
     try:
-        delaunay = Delaunay(points, qhull_options="QJ0.5")
-        # Bounding box calculation
-        min_bb = np.maximum(np.floor(points.min(axis=0)) - 1, 0).astype(int)
-        max_bb = np.minimum(
-            np.ceil(points.max(axis=0)) + 1, np.array(mask.shape) - 1
-        ).astype(int)
-        # Grid generation
-        x, y, z = np.mgrid[
-            min_bb[0] : max_bb[0] + 1,
-            min_bb[1] : max_bb[1] + 1,
-            min_bb[2] : max_bb[2] + 1,
-        ]
-        grid_points = np.vstack((x.ravel(), y.ravel(), z.ravel())).T
-        # Mask filling
-        mask_flat = delaunay.find_simplex(grid_points) >= 0
-        mask[
-            min_bb[0] : max_bb[0] + 1,
-            min_bb[1] : max_bb[1] + 1,
-            min_bb[2] : max_bb[2] + 1,
-        ] |= mask_flat.reshape(x.shape)
-    except Exception:
+        # Use Delaunay triangulation with QJ option for robustness
+        delaunay = Delaunay(points, qhull_options="QJ")
+
+        # Process the grid in chunks to save memory
+        chunk_size = 100  # Process this many slices at a time
+        for z_start in range(min_bb[0], max_bb[0] + 1, chunk_size):
+            z_end = min(z_start + chunk_size, max_bb[0] + 1)
+
+            # Generate grid for this chunk
+            z, y, x = np.mgrid[
+                z_start:z_end,
+                min_bb[1] : max_bb[1] + 1,
+                min_bb[2] : max_bb[2] + 1,
+            ]
+            grid_points = np.vstack((z.ravel(), y.ravel(), x.ravel())).T
+
+            # Find points inside the triangulation
+            mask_flat = delaunay.find_simplex(grid_points) >= 0
+
+            # Update the mask for this chunk
+            mask[
+                z_start:z_end,
+                min_bb[1] : max_bb[1] + 1,
+                min_bb[2] : max_bb[2] + 1,
+            ] |= mask_flat.reshape(z.shape)
+
+            # Free memory
+            z, y, x, grid_points, mask_flat = None, None, None, None, None
+
+    except Exception as e:
         # Fallback: just mark the points
         for p in points:
             idx = tuple(np.round(p).astype(int))
