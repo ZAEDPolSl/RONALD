@@ -222,7 +222,7 @@ def model_tree(bronco_mask, airways_mask, verbose=False):
     return smooth
 
 
-def smooth_tree(bronco_mask, airways_mask, verbose=True, skip_final_smoothing=False):
+def smooth_tree(bronco_mask, airways_mask, verbose=False):
     """
     Create a smoothed airway tree model from mask images.
 
@@ -236,9 +236,6 @@ def smooth_tree(bronco_mask, airways_mask, verbose=True, skip_final_smoothing=Fa
         Airways mask image
     verbose : bool
         Whether to print detailed progress information
-    skip_final_smoothing : bool
-        Whether to skip the final smoothing step (useful for very large trees that cause OOM)
-
     Returns:
     --------
     SimpleITK.Image
