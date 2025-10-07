@@ -3,7 +3,7 @@ from sklearn.decomposition import PCA
 
 from bronco.modelling.cone_construction import is_point_in_cylinder
 from bronco.modelling.densify import densify_point_cloud
-from bronco.modelling.ellipse import find_ellipse as f_el
+from bronco.modelling.ellipse import find_ellipse as f_el, check_ellipse
 from bronco.modelling.fill_gaps import fill_gaps
 from bronco.modelling.segment_branch import segment_branch
 
@@ -97,6 +97,54 @@ class BranchAnalyser:
 
         return ellipse
 
+    def add_ellipse_points(self, cyl_mask, transformed_endpoints, image):
+        """Add original base points to cylinder mask when no cylinder points are found."""
+        # Find original points that correspond to the bases using the tolerance method
+        first_val = transformed_endpoints[0, 0]
+        second_val = transformed_endpoints[1, 0]
+        tol = (
+            self.transformed_points[:, 0].max() - self.transformed_points[:, 0].min()
+        ) / 100
+
+        mask_first = np.isclose(self.transformed_points[:, 0], first_val, atol=tol)
+        mask_second = np.isclose(self.transformed_points[:, 0], second_val, atol=tol)
+
+        # Get the transformed points at the base heights
+        base1_transformed_points = self.transformed_points[mask_first]
+        base2_transformed_points = self.transformed_points[mask_second]
+
+        # Find ellipses for the bases
+        ellipse1 = f_el(base1_transformed_points, transformed_endpoints[0, :])
+        ellipse2 = f_el(base2_transformed_points, transformed_endpoints[1, :])
+
+        # Check which points are actually inside each ellipse
+        base1_in_ellipse = check_ellipse(
+            base1_transformed_points, ellipse1[0], ellipse1[1], ellipse1[2], self.eps
+        )
+        base2_in_ellipse = check_ellipse(
+            base2_transformed_points, ellipse2[0], ellipse2[1], ellipse2[2], self.eps
+        )
+
+        # Get the original points that are inside the ellipses
+        base1_original_points = self.points[mask_first][base1_in_ellipse]
+        base2_original_points = self.points[mask_second][base2_in_ellipse]
+
+        # Add ellipse points to mask
+        if len(base1_original_points) > 0:
+            cyl_mask[
+                base1_original_points[:, 0],
+                base1_original_points[:, 1],
+                base1_original_points[:, 2],
+            ] = 1
+        if len(base2_original_points) > 0:
+            cyl_mask[
+                base2_original_points[:, 0],
+                base2_original_points[:, 1],
+                base2_original_points[:, 2],
+            ] = 1
+
+        return cyl_mask
+
     def analyse_segment(self, ellipses):
         ellipse1, ellipse2 = ellipses
         ellipse2 = self.check_ellipse_convergence(ellipse2, ellipse1, to_higher=True)
@@ -155,6 +203,7 @@ class BranchAnalyser:
             )
             ellipses, ellipse_points = self.separate_branch(transformed_endpoints)
             if i > 0:
+                # Transform back to original space for gap filling
                 prev_lower = self.svd.inverse_transform(prev_upper)
                 curr_upper = self.svd.inverse_transform(ellipse_points[0])
                 ellipse_pairs.append((prev_lower, curr_upper))
@@ -163,10 +212,23 @@ class BranchAnalyser:
             cyl = self.points[inside_cylinder]
             cyl_mask = np.zeros(image.shape, dtype=int)
             cyl_mask[cyl[:, 0], cyl[:, 1], cyl[:, 2]] = 1
+
+            # If no cylinder points found, add the actual original base points directly
+            if np.sum(cyl_mask) == 0:
+                cyl_mask = self.add_ellipse_points(
+                    cyl_mask, transformed_endpoints, image
+                )
+                base_points_added = np.sum(cyl_mask)
+                if self.verbose:
+                    print(
+                        f"    Segment {i+1}: No cylinder points found, added {base_points_added} base points instead"
+                    )
+
             np.logical_or(smooth_cylinder, cyl_mask, out=smooth_cylinder)
 
             if self.verbose:
-                print(f"    Segment {i+1}: Added {np.sum(cyl_mask)} points to cylinder")
+                total_added = np.sum(cyl_mask)
+                print(f"    Segment {i+1}: Added {total_added} points to cylinder")
 
             prev_upper = ellipse_points[1]
 
@@ -222,6 +284,7 @@ class BranchAnalyser:
                     )
                 best_score = score
                 self.best_cylinder = smooth_cylinder
+                # Transform bases back to original coordinate space
                 self.first_base = self.svd.inverse_transform(first_base)
                 self.second_base = self.svd.inverse_transform(second_base)
                 self.aggregated_gaps = gaps

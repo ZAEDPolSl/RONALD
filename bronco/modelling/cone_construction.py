@@ -1,4 +1,5 @@
 import numpy as np
+from bronco.modelling.ellipse import check_ellipse
 
 
 def is_point_in_cylinder(
@@ -26,16 +27,7 @@ def is_point_in_cylinder(
     height = np.linalg.norm(axis_vector)
     if height < eps:
         # Degenerate case: treat as a single ellipse at c1
-        local_vectors = points - c1
-        major_len = np.linalg.norm(major1)
-        minor_len = np.linalg.norm(minor1)
-        if major_len < eps or minor_len < eps:
-            return np.zeros(points.shape[0], dtype=bool)
-        major_unit = major1 / (major_len + eps)
-        minor_unit = minor1 / (minor_len + eps)
-        major_proj = np.dot(local_vectors, major_unit) / (major_len + eps)
-        minor_proj = np.dot(local_vectors, minor_unit) / (minor_len + eps)
-        return (major_proj**2 + minor_proj**2) <= 1
+        return check_ellipse(points, c1, major1, minor1, eps)
 
     axis_unit = axis_vector / (height + eps)
     vec_to_points = points - c1
