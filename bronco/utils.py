@@ -8,7 +8,7 @@ def display(text, verbose):
 
 
 def save_object(obj, filename):
-    with open(filename, 'wb') as outp:  # Overwrites any existing file.
+    with open(filename, "wb") as outp:  # Overwrites any existing file.
         pickle.dump(obj, outp, pickle.HIGHEST_PROTOCOL)
 
 
@@ -34,11 +34,7 @@ def get_gmm_metadata(gmm):
 
 
 def solve(m1, m2, std1, std2):
-    a = 1 / (2 * std1 ** 2) - 1 / (2 * std2 ** 2)
-    b = m2 / (std2 ** 2) - m1 / (std1 ** 2)
-    c = (
-        m1 ** 2 / (2 * std1 ** 2)
-        - m2 ** 2 / (2 * std2 ** 2)
-        - np.log(std2 / std1)
-    )
+    a = 1 / (2 * std1**2) - 1 / (2 * std2**2)
+    b = m2 / (std2**2) - m1 / (std1**2)
+    c = m1**2 / (2 * std1**2) - m2**2 / (2 * std2**2) - np.log(std2 / std1)
     return np.roots([a, b, c])
