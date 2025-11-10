@@ -16,12 +16,51 @@ Features:
 Feel free to contribute or use this algorithm for research and development. Algorithm works best for low-dose CT.
 
 # Installation
-Run command:
 
-``pip install -r requirements.txt``
+## Clone with Submodules
+This project uses the [CTools](https://github.com/ZAEDPolSl/CTools) library as a git submodule. When cloning, use:
+
+```bash
+git clone --recurse-submodules https://github.com/ZAEDPolSl/BRONCO.git
+```
+
+Or if you've already cloned the repository:
+
+```bash
+git submodule update --init --recursive
+```
+
+## Install Dependencies
+
+### Option 1: Using uv (recommended)
+[uv](https://docs.astral.sh/uv/) is a fast Python package manager. Install it first, then:
+
+```bash
+uv sync
+```
+
+This will automatically install all dependencies including the CTools submodule.
+
+### Option 2: Using pip
+```bash
+pip install -r requirements.txt
+```
 
 The `lungmask` package is there for the lungs segmentation task, please refer to the
 [original github](https://github.com/JoHof/lungmask) repository for citation.
+
+## Running Scripts
+
+With uv:
+```bash
+uv run python examples/01_segmentation.py
+```
+
+With pip (in activated virtual environment):
+```bash
+python examples/01_segmentation.py
+```
+
 # Usage
 
 Example usage can be found in `examples/whole_pipeline.py`, note that depending on your IDE configuration supplied

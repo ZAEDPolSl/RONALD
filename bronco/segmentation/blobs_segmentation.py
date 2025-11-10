@@ -1,6 +1,6 @@
 import itk
-from bronco.external.sitk2itk import ConvertItkImageToSimpleItkImage
-from bronco.external.sitk2itk import ConvertSimpleItkImageToItkImage
+
+from ctools import itk_to_sitk, sitk_to_itk
 
 
 def blobs_segmentation(sitk_image, sitk_lungs, sigma_min=1, sigma_max=5, steps=8):
@@ -18,8 +18,8 @@ def blobs_segmentation(sitk_image, sitk_lungs, sigma_min=1, sigma_max=5, steps=8
     Dimension = 3
     PixelType = itk.D
 
-    itk_image = ConvertSimpleItkImageToItkImage(sitk_image, PixelType)
-    itk_lungs = ConvertSimpleItkImageToItkImage(sitk_lungs, PixelType)
+    itk_image = sitk_to_itk(sitk_image, PixelType)
+    itk_lungs = sitk_to_itk(sitk_lungs, PixelType)
     direction = sitk_image.GetDirection()
 
     multiply_filter = itk.MultiplyImageFilter[
@@ -100,5 +100,5 @@ def blobs_segmentation(sitk_image, sitk_lungs, sigma_min=1, sigma_max=5, steps=8
     threshold_filter.Update()
     itk_blobs = threshold_filter.GetOutput()
 
-    sitk_blob_enhanced = ConvertItkImageToSimpleItkImage(itk_blobs, 1, direction)
+    sitk_blob_enhanced = itk_to_sitk(itk_blobs, 1, direction)
     return sitk_blob_enhanced

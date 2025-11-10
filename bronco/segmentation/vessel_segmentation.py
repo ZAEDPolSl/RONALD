@@ -4,10 +4,7 @@ import SimpleITK as sitk
 from skimage.measure import regionprops
 
 
-from bronco.external.sitk2itk import (
-    ConvertItkImageToSimpleItkImage,
-    ConvertSimpleItkImageToItkImage,
-)
+from ctools import itk_to_sitk, sitk_to_itk
 from bronco.segmentation.blobs_segmentation import blobs_segmentation
 from bronco.segmentation.airways_segmentation import fast_marching
 
@@ -19,8 +16,8 @@ def vesselness_filter(sitk_image, sitk_lungs):
     threshold = 30
 
     float_sitk = sitk.Cast(sitk_image, sitk.sitkFloat32)
-    itk_image = ConvertSimpleItkImageToItkImage(float_sitk, itk.F)
-    itk_lungs = ConvertSimpleItkImageToItkImage(sitk_lungs, itk.F)
+    itk_image = sitk_to_itk(float_sitk, itk.F)
+    itk_lungs = sitk_to_itk(sitk_lungs, itk.F)
 
     itk_image = itk.cast_image_filter(
         itk_image, ttype=[type(itk_image), itk.Image[itk.F, 3]]
@@ -64,9 +61,7 @@ def vesselness_filter(sitk_image, sitk_lungs):
 
     # Keep a SimpleITK copy of the (masked) vesselness response values
     direction = float_sitk.GetDirection()
-    sitk_vesselness = ConvertItkImageToSimpleItkImage(
-        output_image, sitk.sitkFloat32, direction
-    )
+    sitk_vesselness = itk_to_sitk(output_image, sitk.sitkFloat32, direction)
 
     threshold_filter = itk.BinaryThresholdImageFilter[
         itk.Image[itk.F, 3], itk.Image[itk.UC, 3]
@@ -79,9 +74,7 @@ def vesselness_filter(sitk_image, sitk_lungs):
     output_image = threshold_filter.GetOutput()
 
     # Convert binary ITK image back to SimpleITK
-    sitk_vessels = ConvertItkImageToSimpleItkImage(
-        output_image, sitk.sitkUInt8, direction
-    )
+    sitk_vessels = itk_to_sitk(output_image, sitk.sitkUInt8, direction)
     return sitk_vessels, sitk_vesselness
 
 

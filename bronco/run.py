@@ -1,7 +1,7 @@
 import argparse
 import SimpleITK as sitk
 from bronco.utils import display
-from bronco.io_local import ImageInstance
+from ctools import ImageInstance
 from bronco.segmentation import airways_segmentation, lungs_segmentation
 
 

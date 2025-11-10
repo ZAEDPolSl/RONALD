@@ -12,7 +12,7 @@ from skimage.morphology import skeletonize
 
 from bronco.utils import display
 from bronco.external.sknw import build_sknw
-from bronco.io_local.ImageInstance import ImageInstance
+from ctools import ImageInstance
 from bronco.processing.gmm_thresholding import run_thresholding
 from bronco.segmentation.trachea_segmentation import trachea_main_bronchus_segmentation
 from bronco.processing.connected_components import (

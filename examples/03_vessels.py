@@ -1,7 +1,9 @@
 import os
+
 import SimpleITK as sitk
+
 from bronco.segmentation import vessel_segmentation
-from bronco.io_local import ImageInstance
+from ctools import ImageInstance
 
 opj = os.path.join
 dir_path = os.path.dirname(os.path.realpath(__file__))
