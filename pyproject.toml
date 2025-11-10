@@ -1,9 +1,10 @@
 [project]
 name = "bronco"
-version = "0.1.0"
+version = "1.0.0"
 description = ""
 authors = [
-    {name = "Your Name",email = "you@example.com"}
+    {name = "Marek Socha",email = "marek.socha@polsl.pl"},
+    {name = "Anna Mrukwa", email = "anna.mrukwa@polsl.pl"}
 ]
 readme = "README.md"
 requires-python = ">=3.10,<4.0.0"
@@ -22,9 +23,13 @@ dependencies = [
     "scipy (>=1.15.2,<2.0.0)",
     "itk (>=5.4.3,<6.0.0)",
     "kimimaro (>=5.4.0,<6.0.0)",
+    "ctools",
 ]
 
 
 [build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+ctools = { path = "ctools", editable = true }

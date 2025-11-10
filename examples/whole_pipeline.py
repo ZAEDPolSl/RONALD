@@ -8,7 +8,7 @@ from bronco.segmentation import (
     vessel_segmentation,
 )
 from bronco.modelling.smooth_tree import smooth_tree
-from bronco.io_local import ImageInstance
+from ctools import ImageInstance
 
 opj = os.path.join
 dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -22,10 +22,10 @@ if __name__ == "__main__":
     sitk_lungs = lungs_segmentation(sitk_image)
     sitk_lobes = lobes_segmentation(sitk_image)
     sitk_mediastinum = mediastinum_segmentation(sitk_lungs)
-    sitk_airways, _, __, sitk_rough = (
-                airways_segmentation(sitk_image, sitk_lungs)
-            )
+    sitk_airways, _, __, sitk_rough = airways_segmentation(sitk_image, sitk_lungs)
     sitk_tracheobronchal = smooth_tree(sitk_rough, sitk_airways)
-    sitk_vessels = vessel_segmentation(sitk_image, sitk_lungs, sitk_lobes, sitk_mediastinum)
+    sitk_vessels = vessel_segmentation(
+        sitk_image, sitk_lungs, sitk_lobes, sitk_mediastinum
+    )
 
     print("Done!")

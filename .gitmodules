@@ -1,0 +1,3 @@
+[submodule "ctools"]
+	path = ctools
+	url = https://github.com/ZAEDPolSl/CTools.git
