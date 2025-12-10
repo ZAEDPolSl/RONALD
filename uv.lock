@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10, <4.0.0"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -33,7 +33,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ctools", editable = "ctools" },
+    { name = "ctools", directory = "ctools" },
     { name = "itk", specifier = ">=5.4.3,<6.0.0" },
     { name = "kimimaro", specifier = ">=5.4.0,<6.0.0" },
     { name = "lfs", specifier = ">=0.2,<0.3" },
@@ -277,7 +277,7 @@ wheels = [
 [[package]]
 name = "ctools"
 version = "0.1.0"
-source = { editable = "ctools" }
+source = { directory = "ctools" }
 dependencies = [
     { name = "itk" },
     { name = "numpy" },
