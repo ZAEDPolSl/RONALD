@@ -8,7 +8,7 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "bronco"
+name = "ronald"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
