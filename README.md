@@ -1,5 +1,5 @@
-# BRONCO
-This repository contains a Python 3.8 implementation of an airways segmentation algorithm for CT thorax images. 
+# RONALD
+This repository contains a Python 3.8 implementation of an airways and vessels segmentation algorithm for CT thorax images. 
 The algorithm utilizes the Fast Marching method, guided by two velocity maps: one based on image gradient and 
 the other on vesselness filtering. This combination enhances the accuracy and reliability of airway segmentation,
 making it suitable for medical imaging and research purposes.
