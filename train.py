@@ -1,8 +1,12 @@
-import argparse
 import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+import argparse
 import json
 import torch
-from monai.networks.nets import SwinUNETR
+
+from monai.networks.nets import SwinUNETR, UNet
 from monai.losses import DiceCELoss
 from monai.transforms import Compose
 from bronco.training.trainer import Trainer
@@ -33,7 +37,7 @@ def get_train_transforms(roi_size, spatial_size, target_size):
         CropForegroundd(keys=["image", "label"], source_key="image", margin=0),
         Resized(
             keys=["image", "label"],
-            spatial_size=target_size,
+            spatial_size=(256, 256, 256),
             mode=("trilinear", "nearest"),
         ),
     ]
@@ -73,7 +77,7 @@ def get_val_transforms(spatial_size, target_size):
         CropForegroundd(keys=["image", "label"], source_key="image", margin=0),
         Resized(
             keys=["image", "label"],
-            spatial_size=target_size,
+            spatial_size=(256, 256, 256),
             mode=("trilinear", "nearest"),
         ),
     ]
@@ -120,7 +124,12 @@ def main():
     parser.add_argument(
         "--max-epochs", type=int, default=500, help="Maximum number of epochs"
     )
-    parser.add_argument("--batch-size", type=int, default=1, help="Batch size")
+    parser.add_argument(
+        "--unet-batch-size", type=int, default=1, help="Batch size for UNet"
+    )
+    parser.add_argument(
+        "--swin-batch-size", type=int, default=1, help="Batch size for SwinUNETR"
+    )
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--weight-decay", type=float, default=1e-5, help="Weight decay")
     parser.add_argument(
@@ -162,21 +171,74 @@ def main():
     val_files = datalist_dict["validation"]
     test_files = datalist_dict.get("test", [])
     train_transforms = get_train_transforms(
-        tuple(args.roi_size), tuple(args.spacing), tuple(args.roi_size)
+        tuple(args.roi_size), tuple(args.spacing), (256, 256, 256)
     )
-    val_transforms = get_val_transforms(tuple(args.spacing), tuple(args.roi_size))
-    train_loader, val_loader, test_loader = get_dataloaders(
+    val_transforms = get_val_transforms(tuple(args.spacing), (256, 256, 256))
+    # Separate batch sizes for UNet and SwinUNETR
+    train_loader_unet, val_loader_unet, test_loader_unet = get_dataloaders(
         train_files,
         val_files,
         test_files,
         train_transforms,
         val_transforms,
-        args.batch_size,
+        args.unet_batch_size,
         args.num_workers,
         args.cache_rate,
     )
+    train_loader_swin, val_loader_swin, test_loader_swin = get_dataloaders(
+        train_files,
+        val_files,
+        test_files,
+        train_transforms,
+        val_transforms,
+        args.swin_batch_size,
+        args.num_workers,
+        args.cache_rate,
+    )
+    # --- UNet run ---
+    unet_model = UNet(
+        spatial_dims=3,
+        in_channels=1,
+        out_channels=4,
+        channels=(16, 32, 64, 128, 256),
+        strides=(2, 2, 2, 2),
+        num_res_units=2,
+        norm="instance",
+    ).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
+    unet_optimizer = torch.optim.AdamW(
+        unet_model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+    )
+    unet_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        unet_optimizer, T_max=args.max_epochs
+    )
+    loss_function = DiceCELoss(
+        to_onehot_y=True, softmax=True, squared_pred=True, smooth_nr=0.0, smooth_dr=1e-6
+    )
+    unet_trainer = Trainer(
+        model=unet_model,
+        optimizer=unet_optimizer,
+        scheduler=unet_scheduler,
+        loss_function=loss_function,
+        device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
+        output_dir=os.path.join(args.output_dir, "unet"),
+        patience=args.patience,
+        min_delta=args.min_delta,
+        amp=args.amp,
+    )
+    print("\n==== Training UNet ====")
+    unet_trainer.fit(
+        train_loader=train_loader_unet,
+        val_loader=val_loader_unet,
+        max_epochs=args.max_epochs,
+        val_interval=args.val_interval,
+        plot_interval=args.plot_interval,
+        checkpoint_interval=args.checkpoint_interval,
+        sw_batch_size=args.sw_batch_size,
+        roi_size=tuple(args.roi_size),
+    )
+
+    # --- SwinUNETR run ---
     model = SwinUNETR(
-        img_size=tuple(args.roi_size),
         in_channels=1,
         out_channels=4,
         feature_size=args.feature_size,
@@ -184,7 +246,7 @@ def main():
         attn_drop_rate=0.0,
         dropout_path_rate=0.0,
         use_checkpoint=True,
-    ).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+    ).to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
     if args.pretrained_weights:
         model.load_from(weights=torch.load(args.pretrained_weights, map_location="cpu"))
     optimizer = torch.optim.AdamW(
@@ -193,23 +255,21 @@ def main():
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=args.max_epochs
     )
-    loss_function = DiceCELoss(
-        to_onehot_y=True, softmax=True, squared_pred=True, smooth_nr=0.0, smooth_dr=1e-6
-    )
-    trainer = Trainer(
+    swin_trainer = Trainer(
         model=model,
         optimizer=optimizer,
         scheduler=scheduler,
         loss_function=loss_function,
-        device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        output_dir=args.output_dir,
+        device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
+        output_dir=os.path.join(args.output_dir, "swinunetr"),
         patience=args.patience,
         min_delta=args.min_delta,
         amp=args.amp,
     )
-    trainer.fit(
-        train_loader=train_loader,
-        val_loader=val_loader,
+    print("\n==== Training SwinUNETR ====")
+    swin_trainer.fit(
+        train_loader=train_loader_swin,
+        val_loader=val_loader_swin,
         max_epochs=args.max_epochs,
         val_interval=args.val_interval,
         plot_interval=args.plot_interval,

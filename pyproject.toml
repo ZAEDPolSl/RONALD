@@ -32,4 +32,8 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.uv.sources]
-ctools = { workspace = true }
+# ctools is a local subpackage included in this repository. When developing bronco
+# standalone (it is a submodule of a larger workspace), the workspace=true
+# setting causes the uv tool to expect a workspace member. Point the source to
+# the local path instead so bronco can be used independently.
+ctools = { path = "ctools" }

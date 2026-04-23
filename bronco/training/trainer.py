@@ -3,7 +3,12 @@ from torch.utils.tensorboard import SummaryWriter
 from monai.losses import DiceCELoss
 from monai.networks.nets import SwinUNETR
 from monai.data import set_track_meta
+from monai.metrics import DiceMetric
+from monai.inferers import sliding_window_inference
+from monai.transforms import AsDiscrete
+from monai.data import decollate_batch
 import os
+from tqdm import tqdm
 import numpy as np
 
 
@@ -56,7 +61,10 @@ class Trainer:
             self.model.train()
             epoch_loss = 0
             step = 0
-            for batch_data in train_loader:
+            train_pbar = tqdm(
+                train_loader, desc=f"Epoch {epoch+1}/{max_epochs} [Train]", leave=False
+            )
+            for batch_data in train_pbar:
                 step += 1
                 inputs, labels = batch_data["image"].to(self.device), batch_data[
                     "label"
@@ -75,6 +83,7 @@ class Trainer:
                     loss.backward()
                     self.optimizer.step()
                 epoch_loss += loss.item()
+                train_pbar.set_postfix({"loss": f"{loss.item():.4f}"})
             epoch_loss /= step
             train_losses.append(epoch_loss)
             learning_rates.append(self.optimizer.param_groups[0]["lr"])
@@ -83,12 +92,19 @@ class Trainer:
             self.writer.add_scalar("LR", self.optimizer.param_groups[0]["lr"], epoch)
             print(f"Epoch {epoch+1}/{max_epochs} - Train loss: {epoch_loss:.4f}")
             if (epoch + 1) % val_interval == 0:
-                val_metric, per_class_dice, val_vis = self.validate(
-                    val_loader, sw_batch_size, roi_size, visualize=(epoch + 1) % 10 == 0
+                val_metric, per_class_dice, val_vis, val_loss = self.validate(
+                    val_loader,
+                    sw_batch_size,
+                    roi_size,
+                    visualize=(epoch + 1) % 10 == 0,
+                    show_progress=True,
                 )
                 val_metrics.append(val_metric)
                 val_per_class_metrics.append(per_class_dice)
                 self.writer.add_scalar("Dice/val", val_metric, epoch)
+                # Log validation loss
+                if val_loss is not None:
+                    self.writer.add_scalar("Loss/val", val_loss, epoch)
                 for i, d in enumerate(per_class_dice):
                     self.writer.add_scalar(f"Dice/val_class_{i}", d, epoch)
                 print(
@@ -133,19 +149,23 @@ class Trainer:
         )
         return best_metric, best_metric_epoch
 
-    def validate(self, loader, sw_batch_size, roi_size, visualize=False):
-        from monai.metrics import DiceMetric
-        from monai.inferers import sliding_window_inference
-        from monai.transforms import AsDiscrete
-        from monai.data import decollate_batch
-
+    def validate(
+        self, loader, sw_batch_size, roi_size, visualize=False, show_progress=False
+    ):
         self.model.eval()
         dice_metric = DiceMetric(include_background=True, reduction="mean_batch")
         post_pred = AsDiscrete(argmax=True, to_onehot=4)
         post_label = AsDiscrete(to_onehot=4)
         vis_samples = []
+        val_loss_sum = 0.0
+        val_steps = 0
         with torch.no_grad():
-            for val_data in loader:
+            val_iter = (
+                tqdm(loader, desc="Validation", leave=False)
+                if show_progress
+                else loader
+            )
+            for val_data in val_iter:
                 val_inputs = val_data["image"].to(self.device)
                 val_labels = val_data["label"].to(self.device)
                 val_outputs = sliding_window_inference(
@@ -156,6 +176,16 @@ class Trainer:
                 val_output_convert = [post_pred(x) for x in val_outputs_list]
                 val_labels_convert = [post_label(x) for x in val_labels_list]
                 dice_metric(y_pred=val_output_convert, y=val_labels_convert)
+                if show_progress:
+                    # Show running mean dice for this batch if available
+                    try:
+                        agg = dice_metric.aggregate()
+                        if agg is not None:
+                            batch_dice = agg.cpu().numpy().mean().item()
+                            val_iter.set_postfix({"mean_dice": f"{batch_dice:.4f}"})
+                    except Exception:
+                        # If aggregation is not ready yet, skip updating the progress bar
+                        pass
                 # Visualization: only for the first batch, only if requested
                 if visualize and len(vis_samples) == 0:
                     for i in range(min(5, len(val_outputs_list))):
@@ -207,7 +237,7 @@ class Trainer:
 
                             # Normalize for visualization
                             def norm(x):
-                                return (x - x.min()) / (x.ptp() + 1e-8)
+                                return (x - x.min()) / (np.ptp(x) + 1e-8)
 
                             vis_dict = {
                                 "Axial": (
@@ -242,8 +272,12 @@ class Trainer:
         dice_scores = dice_metric.aggregate().cpu().numpy()
         mean_dice = dice_scores.mean().item()
         dice_metric.reset()
+        mean_val_loss = None
+        if val_steps > 0:
+            mean_val_loss = val_loss_sum / val_steps
         return (
             mean_dice,
             dice_scores,
             vis_samples if visualize and vis_samples else None,
+            mean_val_loss,
         )

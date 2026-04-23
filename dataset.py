@@ -6,7 +6,7 @@ Handles multiple file formats (DICOM, NIFTI, NRRD) using ImageInstance.
 import os
 import json
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
@@ -125,6 +125,7 @@ def create_datalist(
     test_split: float = 0.1,
     random_seed: int = 42,
     mask_filename: str = "bronco_final.nrrd",
+    grading_csv: Optional[str] = None,
 ) -> Dict[str, List[Dict[str, str]]]:
     """
     Create a MONAI-compatible dataset JSON file with train/val/test splits.
@@ -145,11 +146,40 @@ def create_datalist(
     for dataset_name in dataset_names:
         print(f"Processing dataset: {dataset_name}")
 
+        # If a grading CSV is provided, load allowed patient names for this dataset
+        allowed_patients = None
+        if grading_csv is not None:
+            try:
+                gdf = pd.read_csv(grading_csv)
+                if "patient" in gdf.columns and "dataset" in gdf.columns:
+                    allowed_patients = set(
+                        gdf.loc[gdf["dataset"] == dataset_name, "patient"]
+                        .astype(str)
+                        .str.strip()
+                    )
+                    print(
+                        f"  Loaded {len(allowed_patients)} allowed patients from grading CSV for {dataset_name}"
+                    )
+                else:
+                    print(
+                        "  Grading CSV missing required columns 'patient' and 'dataset' — ignoring filter"
+                    )
+                    allowed_patients = None
+            except Exception as e:
+                print(
+                    f"  Could not read grading CSV '{grading_csv}': {e} — ignoring filter"
+                )
+                allowed_patients = None
+
         filenames = get_dataset_files(dataset_name)
         masks_path = DATASETS_CONFIG[dataset_name]["masks_path"]
 
         for filename in filenames:
             patient_name = get_patient_name(filename, dataset_name)
+
+            # If grading CSV filtering is enabled, skip patients not listed
+            if allowed_patients is not None and patient_name not in allowed_patients:
+                continue
 
             # Determine the image path
             if dataset_name in ["Moltest 2", "Moltest 2_400"]:
@@ -295,6 +325,12 @@ if __name__ == "__main__":
         help="Mask filename to use",
     )
     parser.add_argument(
+        "--grading-csv",
+        type=str,
+        default="/mnt/pmanas/Ania/phd-data/ronald_grading/grading_airways_cleaned.csv",
+        help="Path to grading CSV with columns 'patient' and 'dataset' to filter patients",
+    )
+    parser.add_argument(
         "--verify",
         action="store_true",
         help="Verify data integrity after creation",
@@ -310,6 +346,7 @@ if __name__ == "__main__":
         test_split=args.test_split,
         random_seed=args.seed,
         mask_filename=args.mask_filename,
+        grading_csv=args.grading_csv,
     )
 
     # Optionally verify
