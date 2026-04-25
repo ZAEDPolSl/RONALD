@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import math
 import re
 import unicodedata
@@ -11,7 +12,6 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 import SimpleITK as sitk
-from skimage.morphology import skeletonize
 from tqdm import tqdm
 
 RONALD_MASK_NAME = "bronco_final.nrrd"
@@ -95,12 +95,24 @@ def binary_from_labels(array: np.ndarray, labels: set[int]) -> np.ndarray:
     return np.isin(array, list(labels))
 
 
-def skeletonize_3d(mask: np.ndarray) -> np.ndarray:
+def skeletonize_3d(mask: np.ndarray, backend: str = "sitk") -> np.ndarray:
     if mask.ndim != 3:
         raise ValueError(f"Expected a 3D mask, got shape {mask.shape}")
     if mask.sum() == 0:
         return np.zeros_like(mask, dtype=bool)
-    return skeletonize(mask.astype(bool))
+
+    backend = backend.lower().strip()
+    if backend == "sitk":
+        img = sitk.GetImageFromArray(mask.astype(np.uint8))
+        skel = sitk.BinaryThinning(img)
+        return sitk.GetArrayFromImage(skel) > 0
+
+    if backend == "skimage":
+        from skimage.morphology import skeletonize
+
+        return skeletonize(mask.astype(bool))
+
+    raise ValueError(f"Unsupported skeleton backend: {backend}")
 
 
 def dice(a: np.ndarray, b: np.ndarray) -> float:
@@ -349,7 +361,10 @@ def build_pairs(
     return pairs, pd.DataFrame(debug_rows), airrc_geometry_debug
 
 
-def compare_skeletons_for_pair(pair: PatientPair) -> list[dict[str, object]]:
+def compare_skeletons_for_pair(
+    pair: PatientPair,
+    skeleton_backend: str = "sitk",
+) -> list[dict[str, object]]:
     airrc_img, airrc_arr = load_label_array(pair.airrc_mask_path)
     ronald_img, ronald_arr = load_label_array(pair.ronald_mask_path)
     if geometry_signature(airrc_img) != geometry_signature(ronald_img):
@@ -368,8 +383,8 @@ def compare_skeletons_for_pair(pair: PatientPair) -> list[dict[str, object]]:
     for structure_name, airrc_labels, ronald_labels in comparisons:
         airrc_mask = binary_from_labels(airrc_arr, airrc_labels)
         ronald_mask = binary_from_labels(ronald_arr, ronald_labels)
-        airrc_skeleton = skeletonize_3d(airrc_mask)
-        ronald_skeleton = skeletonize_3d(ronald_mask)
+        airrc_skeleton = skeletonize_3d(airrc_mask, backend=skeleton_backend)
+        ronald_skeleton = skeletonize_3d(ronald_mask, backend=skeleton_backend)
         intersection = np.logical_and(airrc_skeleton, ronald_skeleton)
         rows.append(
             {
@@ -639,6 +654,24 @@ def main() -> None:
         default=None,
         help="Optional limit of paired patients for quick debugging.",
     )
+    parser.add_argument(
+        "--skeleton-backend",
+        type=str,
+        default="sitk",
+        choices=["sitk", "skimage"],
+        help="Skeletonization backend. 'sitk' is more stable for long runs.",
+    )
+    parser.add_argument(
+        "--flush-every",
+        type=int,
+        default=25,
+        help="Write progress CSV every N paired patients.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from progress CSV and skip already processed patients.",
+    )
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -663,10 +696,33 @@ def main() -> None:
             "No paired AirRC/RONALD masks found. Check --airrc-root and inspect airrc_ronald_pairing_debug.csv / airrc_geometry_debug.csv."
         )
 
+    progress_csv = args.output_dir / "moltest1_airrc_ronald_skeleton_comparison.progress.csv"
+    final_csv = args.output_dir / "moltest1_airrc_ronald_skeleton_comparison.csv"
+
     skeleton_rows: list[dict[str, object]] = []
-    for pair in tqdm(pairs, desc="Skeleton comparison"):
+    processed_keys: set[str] = set()
+
+    if args.resume and progress_csv.exists():
+        previous = pd.read_csv(progress_csv)
+        if not previous.empty and "patient_id" in previous.columns:
+            skeleton_rows = previous.to_dict("records")
+            processed_keys = {
+                normalize_patient_id(v)
+                for v in previous["patient_id"].dropna().astype(str).tolist()
+            }
+
+    run_pairs = [
+        pair for pair in pairs if normalize_patient_id(pair.patient_id) not in processed_keys
+    ]
+
+    for idx, pair in enumerate(tqdm(run_pairs, desc="Skeleton comparison"), start=1):
         try:
-            skeleton_rows.extend(compare_skeletons_for_pair(pair))
+            skeleton_rows.extend(
+                compare_skeletons_for_pair(
+                    pair,
+                    skeleton_backend=args.skeleton_backend,
+                )
+            )
         except Exception as exc:
             skeleton_rows.append(
                 {
@@ -689,9 +745,13 @@ def main() -> None:
                     "error": str(exc),
                 }
             )
-    pd.DataFrame(skeleton_rows).to_csv(
-        args.output_dir / "moltest1_airrc_ronald_skeleton_comparison.csv", index=False
-    )
+
+        if args.flush_every > 0 and idx % args.flush_every == 0:
+            pd.DataFrame(skeleton_rows).to_csv(progress_csv, index=False)
+            gc.collect()
+
+    pd.DataFrame(skeleton_rows).to_csv(progress_csv, index=False)
+    pd.DataFrame(skeleton_rows).to_csv(final_csv, index=False)
 
     coordinate_csvs = (
         args.coordinate_csvs
@@ -719,6 +779,9 @@ def main() -> None:
     )
 
     print(f"Paired patients: {len(pairs)}")
+    print(f"Skeleton backend: {args.skeleton_backend}")
+    if args.resume:
+        print(f"Resumed from progress: {len(processed_keys)} patients already processed")
     print(f"Coordinate CSVs: {len(coordinate_csvs)}")
     print(f"Outputs written to: {args.output_dir}")
 
