@@ -14,6 +14,11 @@ import pandas as pd
 import SimpleITK as sitk
 from tqdm import tqdm
 
+try:
+    from scipy.spatial import cKDTree
+except Exception:  # pragma: no cover
+    cKDTree = None
+
 RONALD_MASK_NAME = "bronco_final.nrrd"
 MASK_EXTENSIONS = (".nrrd", ".nii.gz", ".nii", ".mha", ".mhd")
 AIRRC_AIRWAY_LABELS = {1, 2}
@@ -138,6 +143,64 @@ def containment_fraction(source: np.ndarray, target: np.ndarray) -> float:
     if source_count == 0:
         return math.nan
     return float(np.logical_and(source, target).sum() / source_count)
+
+
+def _skeleton_points_mm(mask: np.ndarray, spacing_xyz: tuple[float, float, float]) -> np.ndarray:
+    points_zyx = np.argwhere(mask)
+    if len(points_zyx) == 0:
+        return np.empty((0, 3), dtype=np.float64)
+    points_xyz = points_zyx[:, [2, 1, 0]].astype(np.float64)
+    spacing = np.asarray(spacing_xyz, dtype=np.float64)
+    return points_xyz * spacing
+
+
+def skeleton_distance_metrics(
+    a_skeleton: np.ndarray,
+    b_skeleton: np.ndarray,
+    spacing_xyz: tuple[float, float, float],
+) -> dict[str, float]:
+    if cKDTree is None:
+        return {
+            "mean_min_distance_airrc_to_ronald_mm": math.nan,
+            "mean_min_distance_ronald_to_airrc_mm": math.nan,
+            "chamfer_distance_mm": math.nan,
+            "hd95_distance_mm": math.nan,
+            "hausdorff_distance_mm": math.nan,
+        }
+
+    pts_a = _skeleton_points_mm(a_skeleton, spacing_xyz)
+    pts_b = _skeleton_points_mm(b_skeleton, spacing_xyz)
+
+    if len(pts_a) == 0 and len(pts_b) == 0:
+        return {
+            "mean_min_distance_airrc_to_ronald_mm": 0.0,
+            "mean_min_distance_ronald_to_airrc_mm": 0.0,
+            "chamfer_distance_mm": 0.0,
+            "hd95_distance_mm": 0.0,
+            "hausdorff_distance_mm": 0.0,
+        }
+    if len(pts_a) == 0 or len(pts_b) == 0:
+        return {
+            "mean_min_distance_airrc_to_ronald_mm": math.nan,
+            "mean_min_distance_ronald_to_airrc_mm": math.nan,
+            "chamfer_distance_mm": math.nan,
+            "hd95_distance_mm": math.nan,
+            "hausdorff_distance_mm": math.nan,
+        }
+
+    tree_a = cKDTree(pts_a)
+    tree_b = cKDTree(pts_b)
+    d_a_to_b = tree_b.query(pts_a, k=1)[0]
+    d_b_to_a = tree_a.query(pts_b, k=1)[0]
+    all_min_d = np.concatenate([d_a_to_b, d_b_to_a])
+
+    return {
+        "mean_min_distance_airrc_to_ronald_mm": float(np.mean(d_a_to_b)),
+        "mean_min_distance_ronald_to_airrc_mm": float(np.mean(d_b_to_a)),
+        "chamfer_distance_mm": float((np.mean(d_a_to_b) + np.mean(d_b_to_a)) / 2.0),
+        "hd95_distance_mm": float(np.percentile(all_min_d, 95)),
+        "hausdorff_distance_mm": float(np.max(all_min_d)),
+    }
 
 
 def find_ronald_masks(root: Path, mask_name: str) -> dict[str, Path]:
@@ -386,6 +449,11 @@ def compare_skeletons_for_pair(
         airrc_skeleton = skeletonize_3d(airrc_mask, backend=skeleton_backend)
         ronald_skeleton = skeletonize_3d(ronald_mask, backend=skeleton_backend)
         intersection = np.logical_and(airrc_skeleton, ronald_skeleton)
+        distance_metrics = skeleton_distance_metrics(
+            airrc_skeleton,
+            ronald_skeleton,
+            tuple(float(v) for v in airrc_img.GetSpacing()),
+        )
         rows.append(
             {
                 "patient_id": pair.patient_id,
@@ -408,6 +476,7 @@ def compare_skeletons_for_pair(
                 "ronald_skeleton_inside_airrc_mask_frac": containment_fraction(
                     ronald_skeleton, airrc_mask
                 ),
+                **distance_metrics,
             }
         )
     return rows
@@ -742,6 +811,11 @@ def main() -> None:
                     "skeleton_jaccard": np.nan,
                     "airrc_skeleton_inside_ronald_mask_frac": np.nan,
                     "ronald_skeleton_inside_airrc_mask_frac": np.nan,
+                    "mean_min_distance_airrc_to_ronald_mm": np.nan,
+                    "mean_min_distance_ronald_to_airrc_mm": np.nan,
+                    "chamfer_distance_mm": np.nan,
+                    "hd95_distance_mm": np.nan,
+                    "hausdorff_distance_mm": np.nan,
                     "error": str(exc),
                 }
             )
