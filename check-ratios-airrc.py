@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import SimpleITK as sitk
+from scipy.spatial import cKDTree
 from tqdm import tqdm
 
 
@@ -13,7 +14,7 @@ DEFAULT_MALIGNANT_GROUPS = ["guzek", "zmiana podejrzana", "zmiany zapalne"]
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Create per-change AIRRC BVB cut-off CSV (neighborhood based)."
+        description="Create per-change AIRRC BVB statistics using voxel-distance matching."
     )
     p.add_argument(
         "--nodules-csv",
@@ -65,10 +66,10 @@ def parse_args():
         help="AIRRC labels treated as BVB (default: 1 2 3 4)",
     )
     p.add_argument(
-        "--neighborhood-radius",
-        type=int,
-        default=2,
-        help="Neighborhood radius in voxels for BVB hit check (default: 2 => +/-2)",
+        "--match-radius",
+        type=float,
+        default=1.1,
+        help="Euclidean voxel radius for match tolerance (default: 1.1)",
     )
     return p.parse_args()
 
@@ -77,6 +78,56 @@ def safe_read(path: Path):
     if not path.exists():
         return None
     return sitk.ReadImage(str(path))
+
+
+def offsets_within_radius(radius: float):
+    max_delta = int(np.floor(radius)) + 1
+    offsets = []
+    for dz in range(-max_delta, max_delta + 1):
+        for dy in range(-max_delta, max_delta + 1):
+            for dx in range(-max_delta, max_delta + 1):
+                if np.sqrt(dx * dx + dy * dy + dz * dz) <= radius:
+                    offsets.append((dz, dy, dx))
+    return offsets
+
+
+def patient_cache(mask_img, ct_img, bvb_labels, offsets):
+    mask_arr = sitk.GetArrayFromImage(mask_img)
+    ct_arr = sitk.GetArrayFromImage(ct_img)
+    if mask_arr.shape != ct_arr.shape:
+        raise ValueError(f"Shape mismatch: mask {mask_arr.shape} vs ct {ct_arr.shape}")
+
+    bvb_mask = np.isin(mask_arr, list(bvb_labels))
+    bvb_coords = np.argwhere(bvb_mask)
+    bvb_tree = cKDTree(bvb_coords) if len(bvb_coords) else None
+
+    return {
+        "mask_arr": mask_arr,
+        "ct_arr": ct_arr,
+        "bvb_mask": bvb_mask,
+        "bvb_tree": bvb_tree,
+        "offsets": offsets,
+    }
+
+
+def local_ball(mask_arr, ct_arr, point, offsets):
+    z, y, x = point
+    coords = []
+    labels = []
+    hu = []
+    zdim, ydim, xdim = mask_arr.shape
+
+    for dz, dy, dx in offsets:
+        zz, yy, xx = z + dz, y + dy, x + dx
+        if 0 <= zz < zdim and 0 <= yy < ydim and 0 <= xx < xdim:
+            coords.append((zz, yy, xx))
+            labels.append(mask_arr[zz, yy, xx])
+            hu.append(ct_arr[zz, yy, xx])
+
+    if not coords:
+        return np.empty((0, 3), dtype=int), np.array([]), np.array([])
+
+    return np.asarray(coords, dtype=int), np.asarray(labels), np.asarray(hu, dtype=float)
 
 
 def main():
@@ -90,30 +141,18 @@ def main():
 
     malignant_set = set(args.malignant_groups)
     bvb_labels = set(args.bvb_labels)
-    r = int(args.neighborhood_radius)
+    offsets = offsets_within_radius(args.match_radius)
 
     out_rows = []
     errors = []
-    mask_cache = {}
-    ct_cache = {}
+    patient_data = {}
 
     for row_idx, row in tqdm(df.iterrows(), total=len(df), desc="AIRRC per-change"):
-        patient = str(row["Patient"]) 
+        patient = str(row["Patient"])
         x = int(row["X_index"])
         y = int(row["Y_index"])
         z = int(row["Z_index"])
         class_group = str(row["Class_group"])
-
-        mask_path = args.airrc_root / args.airrc_pattern.format(patient=patient)
-        ct_path = args.ct_root / args.ct_pattern.format(patient=patient)
-
-        if patient not in mask_cache:
-            mask_cache[patient] = safe_read(mask_path)
-        if patient not in ct_cache:
-            ct_cache[patient] = safe_read(ct_path)
-
-        mask_img = mask_cache[patient]
-        ct_img = ct_cache[patient]
 
         result = {
             "source_row": int(row_idx),
@@ -124,32 +163,40 @@ def main():
             "class_group": class_group,
             "is_malignant_group": int(class_group in malignant_set),
             "status": "ok",
+            "match_radius_vox": float(args.match_radius),
+            "detected": np.nan,
             "all_voxels_bvb_neighborhood": np.nan,
             "max_hu_neighborhood": np.nan,
             "max_hu_non_bvb_neighborhood": np.nan,
-            "detected": np.nan,
+            "max_bvb_label_neighborhood": np.nan,
         }
 
-        if mask_img is None:
-            result["status"] = "missing_mask"
-            errors.append(f"Missing mask: {mask_path}")
+        if patient not in patient_data:
+            mask_path = args.airrc_root / args.airrc_pattern.format(patient=patient)
+            ct_path = args.ct_root / args.ct_pattern.format(patient=patient)
+            mask_img = safe_read(mask_path)
+            ct_img = safe_read(ct_path)
+
+            if mask_img is None:
+                patient_data[patient] = {"error": f"missing_mask: {mask_path}"}
+            elif ct_img is None:
+                patient_data[patient] = {"error": f"missing_ct: {ct_path}"}
+            else:
+                try:
+                    patient_data[patient] = patient_cache(mask_img, ct_img, bvb_labels, offsets)
+                except Exception as exc:
+                    patient_data[patient] = {"error": str(exc)}
+
+        pdata = patient_data[patient]
+        if "error" in pdata:
+            result["status"] = pdata["error"].split(":", 1)[0]
+            errors.append(f"{patient}: {pdata['error']}")
             out_rows.append(result)
             continue
 
-        if ct_img is None:
-            result["status"] = "missing_ct"
-            errors.append(f"Missing CT: {ct_path}")
-            out_rows.append(result)
-            continue
-
-        mask_arr = sitk.GetArrayFromImage(mask_img)
-        ct_arr = sitk.GetArrayFromImage(ct_img)
-
-        if mask_arr.shape != ct_arr.shape:
-            result["status"] = "shape_mismatch"
-            errors.append(f"Shape mismatch for {patient}: mask {mask_arr.shape} vs ct {ct_arr.shape}")
-            out_rows.append(result)
-            continue
+        mask_arr = pdata["mask_arr"]
+        ct_arr = pdata["ct_arr"]
+        bvb_tree = pdata["bvb_tree"]
 
         if not (0 <= z < mask_arr.shape[0] and 0 <= y < mask_arr.shape[1] and 0 <= x < mask_arr.shape[2]):
             result["status"] = "coord_out_of_bounds"
@@ -157,28 +204,24 @@ def main():
             out_rows.append(result)
             continue
 
-        z0, z1 = max(0, z - r), min(mask_arr.shape[0], z + r + 1)
-        y0, y1 = max(0, y - r), min(mask_arr.shape[1], y + r + 1)
-        x0, x1 = max(0, x - r), min(mask_arr.shape[2], x + r + 1)
+        ball_coords, ball_labels, ball_hu = local_ball(mask_arr, ct_arr, (z, y, x), offsets)
+        if len(ball_labels) == 0:
+            result["status"] = "empty_neighborhood"
+            out_rows.append(result)
+            continue
 
-        mask_nb = mask_arr[z0:z1, y0:y1, x0:x1]
-        ct_nb = ct_arr[z0:z1, y0:y1, x0:x1]
+        bvb_present = np.isin(ball_labels, list(bvb_labels))
+        non_bvb_present = ~bvb_present
 
-        bvb_mask = np.isin(mask_nb, list(bvb_labels))
-        non_bvb_mask = ~bvb_mask
+        result["all_voxels_bvb_neighborhood"] = int(np.all(bvb_present))
+        result["max_hu_neighborhood"] = float(np.max(ball_hu))
+        result["max_bvb_label_neighborhood"] = int(np.max(ball_labels[bvb_present])) if np.any(bvb_present) else 0
+        result["max_hu_non_bvb_neighborhood"] = float(np.max(ball_hu[non_bvb_present])) if np.any(non_bvb_present) else np.nan
 
-        result["max_hu_neighborhood"] = float(np.max(ct_nb))
-
-        all_bvb = bool(np.all(bvb_mask))
-        result["all_voxels_bvb_neighborhood"] = int(all_bvb)
-
-        if all_bvb:
-            # fully BVB neighborhood -> not detected
+        if bvb_tree is None:
             result["detected"] = 0
         else:
-            # any non-BVB voxel in neighborhood means candidate remains visible
-            result["detected"] = 1
-            result["max_hu_non_bvb_neighborhood"] = float(np.max(ct_nb[non_bvb_mask]))
+            result["detected"] = int(len(bvb_tree.query_ball_point((z, y, x), r=args.match_radius)) > 0)
 
         out_rows.append(result)
 
