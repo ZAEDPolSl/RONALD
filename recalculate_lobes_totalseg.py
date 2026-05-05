@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 
+import SimpleITK as sitk
 from ctools import ImageInstance
 
 from bronco.segmentation import lobes_segmentation
@@ -29,12 +30,7 @@ def recalculate_lobes(patient_path, masks_root, overwrite, device, fast):
             "fast": fast,
         },
     )
-    ImageInstance().write(
-        sitk_lobes,
-        str(output_path),
-        description="Lobes TotalSegmentator",
-        forced_mode="file",
-    )
+    sitk.WriteImage(sitk_lobes, str(output_path))
     return "success"
 
 
