@@ -24,6 +24,18 @@ def lobes_segmentation(sitk_image, config=None):
         package_module.__path__ = [str(repo_path)]
         sys.modules[package_name] = package_module
 
+    # Compatibility shims for older LobePrior modules that still use absolute
+    # imports like `utils.general` or `model.unet_diedre`.
+    alias_paths = {
+        "utils": repo_path / "utils",
+        "model": repo_path / "model",
+    }
+    for alias, alias_path in alias_paths.items():
+        if alias not in sys.modules and alias_path.exists():
+            alias_module = types.ModuleType(alias)
+            alias_module.__path__ = [str(alias_path)]
+            sys.modules[alias] = alias_module
+
     module_name = f"{package_name}.inference"
     module = sys.modules.get(module_name)
     if module is None:
