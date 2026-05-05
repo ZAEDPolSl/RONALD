@@ -3,4 +3,4 @@
 	url = https://github.com/ZAEDPolSl/CTools.git
 [submodule "vendor/LobePrior"]
 	path = vendor/LobePrior
-	url = https://github.com/MICLab-Unicamp/LobePrior.git
+	url = https://github.com/amrukwa/LobePrior.git
