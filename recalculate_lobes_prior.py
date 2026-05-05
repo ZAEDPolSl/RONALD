@@ -10,13 +10,13 @@ MOLTEST1_STUDIES_PATH = Path("/mnt/pmanas/Wojtek/MIRASLC/Dane surowe/Moltest 1/N
 MOLTEST1_MASKS_PATH = Path("/mnt/pmanas/Ania/phd-data/moltest-1/masks")
 
 
-def recalculate_lobes(patient_path, masks_root, overwrite, lobeprior_repo):
+def recalculate_lobes(patient_path, masks_root, overwrite, device, fast):
     patient_name = patient_path.stem
     save_dir = masks_root / patient_name
-    output_path = save_dir / "lobes_prior.nrrd"
+    output_path = save_dir / "lobes_totalseg.nrrd"
 
     if output_path.exists() and not overwrite:
-        print(f"Skipping {patient_name}: lobes_prior.nrrd already exists")
+        print(f"Skipping {patient_name}: lobes_totalseg.nrrd already exists")
         return "exists"
 
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -25,14 +25,14 @@ def recalculate_lobes(patient_path, masks_root, overwrite, lobeprior_repo):
     sitk_lobes = lobes_segmentation(
         sitk_image,
         config={
-            "case_id": patient_name,
-            "lobeprior_repo": lobeprior_repo,
+            "device": device,
+            "fast": fast,
         },
     )
     ImageInstance().write(
         sitk_lobes,
         str(output_path),
-        description="Lobes Prior",
+        description="Lobes TotalSegmentator",
         forced_mode="file",
     )
     return "success"
@@ -40,12 +40,13 @@ def recalculate_lobes(patient_path, masks_root, overwrite, lobeprior_repo):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Recalculate Moltest 1 lobe masks with LobePrior"
+        description="Recalculate Moltest 1 lobe masks with TotalSegmentator"
     )
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--lobeprior-repo", type=str, default=None)
+    parser.add_argument("--device", type=str, default="gpu")
+    parser.add_argument("--fast", action="store_true")
     args = parser.parse_args()
 
     patient_paths = sorted(MOLTEST1_STUDIES_PATH.rglob("*.nrrd"))
@@ -65,7 +66,8 @@ if __name__ == "__main__":
                 patient_path,
                 MOLTEST1_MASKS_PATH,
                 args.overwrite,
-                args.lobeprior_repo,
+                args.device,
+                args.fast,
             )
             if result == "exists":
                 exists_count += 1
@@ -73,7 +75,7 @@ if __name__ == "__main__":
                 success_count += 1
         except Exception as exc:
             error_count += 1
-            with open("Moltest 1_lobes_prior.log", "a") as log_file:
+            with open("Moltest 1_lobes_totalseg.log", "a") as log_file:
                 log_file.write(f"{patient_path.stem}: {str(exc)}\n")
             print(f"Error processing {patient_path.stem}: {exc}")
 
