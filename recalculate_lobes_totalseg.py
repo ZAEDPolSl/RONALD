@@ -6,6 +6,7 @@ import unicodedata
 import pandas as pd
 import SimpleITK as sitk
 from ctools import ImageInstance
+from tqdm import tqdm
 
 from bronco.segmentation import lobes_segmentation
 
@@ -146,12 +147,11 @@ if __name__ == "__main__":
     exists_count = 0
     error_count = 0
 
-    for index, patient_path in enumerate(patient_paths):
-        if index < args.start:
-            continue
-        if args.limit is not None and (index - args.start) >= args.limit:
-            break
+    selected_patient_paths = patient_paths[args.start :]
+    if args.limit is not None:
+        selected_patient_paths = selected_patient_paths[: args.limit]
 
+    for patient_path in tqdm(selected_patient_paths, desc="Recalculating lobes"):
         try:
             result = recalculate_lobes(
                 patient_path,
