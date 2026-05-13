@@ -160,8 +160,8 @@ If `--output-dir` is not provided, the script uses:
 1. `output_dir` from the config, if present
 2. otherwise `<config parent>/mri_vessel_reports`
 
-There is no longer a dedicated single-case test script for a local sample image.
 All MRI runs should go through the config-driven batch runner, even for a single case.
+Do not use the CT example scripts in `examples/` for this MRI workflow.
 
 ## Config Format
 
@@ -196,7 +196,7 @@ Notes:
 - `lung_mask` should point to a binary mask image file
 - all paths inside the config must be valid in the environment where the script runs
 
-Minimal single-case example:
+Minimal MRI config example:
 
 ```json
 {
