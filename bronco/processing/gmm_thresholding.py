@@ -1,12 +1,10 @@
-import os
 import numpy as np
-import pandas as pd
 import SimpleITK as sitk
 from sklearn import mixture
-from bronco.utils import solve, get_gmm_metadata
 
 
 def get_thresholds(gmm_list, max_value):
+    from bronco.utils import solve
 
     thresholds = []
 
@@ -55,6 +53,44 @@ def create_thresholded_volumes(thresholds, image_seg_volume):
     return image_thresholded
 
 
+def _fit_best_bic_gmm(values, gmm_components_range):
+    X = np.asarray(values, dtype=np.float32).reshape(-1, 1)
+    if X.shape[0] == 0:
+        raise ValueError("Cannot fit a GMM on an empty vesselness mask.")
+
+    best_gmm = None
+    best_bic = None
+    for n_components in gmm_components_range:
+        if n_components < 1 or X.shape[0] < n_components:
+            continue
+        gmm = mixture.GaussianMixture(
+            n_components=int(n_components),
+            covariance_type="full",
+            reg_covar=1e-6,
+            random_state=0,
+        )
+        gmm.fit(X)
+        bic = gmm.bic(X)
+        if best_bic is None or bic < best_bic:
+            best_bic = bic
+            best_gmm = gmm
+
+    if best_gmm is None:
+        raise ValueError(
+            "Unable to fit a valid GMM for the provided vesselness values."
+    )
+    return best_gmm
+
+
+def bic_gmm_foreground_mask(values, gmm_components_range=(2, 3, 4, 5)):
+    gmm = _fit_best_bic_gmm(values, gmm_components_range)
+    X = np.asarray(values, dtype=np.float32).reshape(-1, 1)
+    labels = gmm.predict(X)
+    means = gmm.means_.reshape(-1)
+    first_component = int(np.argmin(means))
+    return labels != first_component, int(gmm.n_components)
+
+
 def run_thresholding(
     sitk_image,
     sitk_mask=None,
@@ -62,6 +98,11 @@ def run_thresholding(
     number_of_gmms=3,
     return_thresholds=True,
 ):
+    import os
+    import pandas as pd
+
+    from bronco.utils import get_gmm_metadata
+
     # segment the lung area
     if sitk_mask is not None:
         # get min

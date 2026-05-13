@@ -1,0 +1,14 @@
+{
+  "output_dir": "data/mri_vessel_reports",
+  "caliber_thresholds_mm": {
+    "small": 2.0,
+    "large": 5.0
+  },
+  "studies": [
+    {
+      "name": "case_001",
+      "image": "/absolute/path/to/image.nii.gz",
+      "lung_mask": "/absolute/path/to/lung_mask.nii.gz"
+    }
+  ]
+}

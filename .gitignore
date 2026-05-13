@@ -9,12 +9,16 @@ __pycache__/
 # Environments
 .env
 .venv
+.venv-mri/
+.venv-mri/*
+.venv-mri-freeze/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
-
+data/*
+tmp/*
 # PyBuilder
 .pybuilder/
 target/
