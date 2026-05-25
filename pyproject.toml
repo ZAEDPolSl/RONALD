@@ -34,8 +34,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["ronald"]
-
-[tool.uv.sources]
-# ctools is a local subpackage included in this repository. Point uv at the
-# local path so dependency resolution works in this checkout.
-ctools = { path = "ctools" }
