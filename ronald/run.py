@@ -1,8 +1,8 @@
 import argparse
 import SimpleITK as sitk
-from bronco.utils import display
+from ronald.utils import display
 from ctools import ImageInstance
-from bronco.segmentation import airways_segmentation, lungs_segmentation
+from ronald.segmentation import airways_segmentation, lungs_segmentation
 
 
 def __handle_input(data):

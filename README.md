@@ -21,7 +21,7 @@ Feel free to contribute or use this algorithm for research and development. Algo
 This project uses the [CTools](https://github.com/ZAEDPolSl/CTools) library as a git submodule. When cloning, use:
 
 ```bash
-git clone --recurse-submodules https://github.com/ZAEDPolSl/BRONCO.git
+git clone --recurse-submodules https://github.com/ZAEDPolSl/RONALD.git
 ```
 
 Or if you've already cloned the repository:

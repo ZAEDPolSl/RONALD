@@ -10,12 +10,12 @@ from scipy.ndimage.morphology import binary_fill_holes
 
 from skimage.morphology import skeletonize
 
-from bronco.utils import display
-from bronco.external.sknw import build_sknw
+from ronald.utils import display
+from ronald.external.sknw import build_sknw
 from ctools import ImageInstance
-from bronco.processing.gmm_thresholding import run_thresholding
-from bronco.segmentation.trachea_segmentation import trachea_main_bronchus_segmentation
-from bronco.processing.connected_components import (
+from ronald.processing.gmm_thresholding import run_thresholding
+from ronald.segmentation.trachea_segmentation import trachea_main_bronchus_segmentation
+from ronald.processing.connected_components import (
     convex_hull_3d,
     find_largest_connected_component,
     find_most_similar_connected_component,

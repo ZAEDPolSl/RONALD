@@ -1,8 +1,8 @@
 import numpy as np
 import SimpleITK as sitk
 from skimage.measure import label
-from bronco.utils_sitk import erosion_by_slice
-from bronco.segmentation.mediastinum_segmentation import mediastinum_segmentation
+from ronald.utils_sitk import erosion_by_slice
+from ronald.segmentation.mediastinum_segmentation import mediastinum_segmentation
 
 
 def trachea_main_bronchus_segmentation(sitk_image, sitk_lungs, return_all=False):

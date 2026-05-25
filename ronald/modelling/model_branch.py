@@ -1,11 +1,11 @@
 import numpy as np
 from sklearn.decomposition import PCA
 
-from bronco.modelling.cone_construction import is_point_in_cylinder
-from bronco.modelling.densify import densify_point_cloud
-from bronco.modelling.ellipse import find_ellipse as f_el, check_ellipse
-from bronco.modelling.fill_gaps import fill_gaps
-from bronco.modelling.segment_branch import segment_branch
+from ronald.modelling.cone_construction import is_point_in_cylinder
+from ronald.modelling.densify import densify_point_cloud
+from ronald.modelling.ellipse import find_ellipse as f_el, check_ellipse
+from ronald.modelling.fill_gaps import fill_gaps
+from ronald.modelling.segment_branch import segment_branch
 
 
 class BranchAnalyser:

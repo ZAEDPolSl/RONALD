@@ -1,13 +1,13 @@
 import os
 import SimpleITK as sitk
-from bronco.segmentation import (
+from ronald.segmentation import (
     airways_segmentation,
     lungs_segmentation,
     lobes_segmentation,
     mediastinum_segmentation,
     vessel_segmentation,
 )
-from bronco.modelling.smooth_tree import smooth_tree
+from ronald.modelling.smooth_tree import smooth_tree
 from ctools import ImageInstance
 
 opj = os.path.join

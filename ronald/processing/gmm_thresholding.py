@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import SimpleITK as sitk
 from sklearn import mixture
-from bronco.utils import solve, get_gmm_metadata
+from ronald.utils import solve, get_gmm_metadata
 
 
 def get_thresholds(gmm_list, max_value):

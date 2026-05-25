@@ -2,7 +2,7 @@ from tqdm import tqdm
 import numpy as np
 from scipy.spatial import KDTree
 
-from bronco.modelling.visvalingam import visvalingam_whyatt_3d
+from ronald.modelling.visvalingam import visvalingam_whyatt_3d
 
 
 def closest_edge_indices(branch, edge_list, tol=1e-6):

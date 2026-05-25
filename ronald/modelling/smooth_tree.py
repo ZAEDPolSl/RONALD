@@ -2,15 +2,15 @@ import numpy as np
 import SimpleITK as sitk
 from tqdm import tqdm
 
-from bronco.modelling.fill_gaps import fill_gaps
-from bronco.modelling.model_branch import BranchAnalyser
-from bronco.modelling.prepare_graph import (
+from ronald.modelling.fill_gaps import fill_gaps
+from ronald.modelling.model_branch import BranchAnalyser
+from ronald.modelling.prepare_graph import (
     prepare_graph,
     assign_thickness,
 )
-from bronco.modelling.kimimaro_graph import prepare_graph_kimimaro
-from bronco.modelling.segment_branch import assign_branch
-from bronco.modelling.branch_closing import apply_smoothing_by_node_order
+from ronald.modelling.kimimaro_graph import prepare_graph_kimimaro
+from ronald.modelling.segment_branch import assign_branch
+from ronald.modelling.branch_closing import apply_smoothing_by_node_order
 
 
 def get_node_order(graph):
@@ -261,7 +261,7 @@ def smooth_tree(bronco_mask, airways_mask, verbose=False):
     # Copy metadata from input image
     sitk_smooth.CopyInformation(bronco_mask)
 
-    # Mask with original bronco mask to ensure no leakage
+    # Mask with original airway mask to ensure no leakage
     sitk_smooth = sitk_smooth & bronco_mask
 
     if verbose:

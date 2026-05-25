@@ -3,7 +3,7 @@ import SimpleITK as sitk
 import numpy as np
 from skimage.morphology import skeletonize
 
-from bronco.external.sknw import build_sknw
+from ronald.external.sknw import build_sknw
 
 
 def keep_largest_component(graph):

@@ -2,7 +2,7 @@ import os
 
 import SimpleITK as sitk
 
-from bronco.segmentation import vessel_segmentation
+from ronald.segmentation import vessel_segmentation
 from ctools import ImageInstance
 
 opj = os.path.join

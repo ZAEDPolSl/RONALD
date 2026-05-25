@@ -10,7 +10,7 @@ import SimpleITK as sitk
 import numpy as np
 import scipy.ndimage as ndi
 import kimimaro
-from bronco.modelling.prepare_graph import keep_largest_component
+from ronald.modelling.prepare_graph import keep_largest_component
 
 
 def _kimimaro_to_graph_structure(skeleton):

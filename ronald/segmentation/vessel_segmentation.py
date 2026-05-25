@@ -5,8 +5,8 @@ from skimage.measure import regionprops
 
 
 from ctools import itk_to_sitk, sitk_to_itk
-from bronco.segmentation.blobs_segmentation import blobs_segmentation
-from bronco.segmentation.airways_segmentation import fast_marching
+from ronald.segmentation.blobs_segmentation import blobs_segmentation
+from ronald.segmentation.airways_segmentation import fast_marching
 
 
 def vesselness_filter(sitk_image, sitk_lungs):
@@ -116,11 +116,11 @@ def vessel_segmentation(
 
     sitk_speed = vesselness_to_speed(sitk_vesselness, sitk_mask=sitk_lungs, power=2.0)
     if sitk_mediastinum is None:
-        from bronco.segmentation import mediastinum_segmentation
+        from ronald.segmentation import mediastinum_segmentation
 
         sitk_mediastinum = mediastinum_segmentation(sitk_lungs)
     if sitk_lobes is None:
-        from bronco.segmentation import lobes_segmentation
+        from ronald.segmentation import lobes_segmentation
 
         sitk_lobes = lobes_segmentation(sitk_image)
 

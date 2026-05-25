@@ -1,5 +1,5 @@
 import numpy as np
-from bronco.modelling.ellipse import check_ellipse
+from ronald.modelling.ellipse import check_ellipse
 
 
 def is_point_in_cylinder(
