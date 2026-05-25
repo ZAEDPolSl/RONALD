@@ -11,7 +11,7 @@ requires-python = ">=3.10,<4.0.0"
 dependencies = [
     "simpleitk (>=2.4.1,<3.0.0)",
     "opencv-python (>=4.11.0.86,<5.0.0.0)",
-    "lungmask (>=0.2.20,<0.3.0)",
+    "nibabel (>=5.4.2,<6.0.0)",
     "scikit-image (>=0.25.2,<0.26.0)",
     "scikit-learn (>=1.6.1,<2.0.0)",
     "networkx (>=3.4.2,<4.0.0)",
@@ -23,6 +23,7 @@ dependencies = [
     "scipy (>=1.15.2,<2.0.0)",
     "itk (>=5.4.3,<6.0.0)",
     "kimimaro (>=5.4.0,<6.0.0)",
+    "totalsegmentator (>=2.13.0,<3.0.0)",
     "ctools",
 ]
 
@@ -35,4 +36,6 @@ build-backend = "hatchling.build"
 packages = ["ronald"]
 
 [tool.uv.sources]
-ctools = { workspace = true }
+# ctools is a local subpackage included in this repository. Point uv at the
+# local path so dependency resolution works in this checkout.
+ctools = { path = "ctools" }

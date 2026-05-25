@@ -46,8 +46,9 @@ This will automatically install all dependencies including the CTools submodule.
 pip install -r requirements.txt
 ```
 
-The `lungmask` package is there for the lungs segmentation task, please refer to the
-[original github](https://github.com/JoHof/lungmask) repository for citation.
+The `TotalSegmentator` package is used for lungs and lobes segmentation, please
+refer to the [original github](https://github.com/wasserth/TotalSegmentator)
+repository for citation and model details.
 
 ## Running Scripts
 
