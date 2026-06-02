@@ -74,7 +74,16 @@ Main output files are:
 
 ### Option 2. Docker
 
-1. Build the Docker image:
+Docker Hub repository:
+- [amrukwa/ronald-mri](https://hub.docker.com/repository/docker/amrukwa/ronald-mri/general)
+
+1. Pull the prebuilt Docker image:
+
+```bash
+docker pull amrukwa/ronald-mri:latest
+```
+
+If you prefer to build locally from this repository instead:
 
 ```bash
 docker build -f MRI-vesselness.dockerfile -t bronco-mri-vessels .
@@ -96,7 +105,7 @@ Example:
 ```bash
 docker run --rm \
   -v /absolute/path/to/data:/data \
-  bronco-mri-vessels \
+  amrukwa/ronald-mri:latest \
   --config /data/my_mri_vessel_config.docker.json
 ```
 
@@ -105,7 +114,7 @@ Optional:
 ```bash
 docker run --rm \
   -v /absolute/path/to/data:/data \
-  bronco-mri-vessels \
+  amrukwa/ronald-mri:latest \
   --config /data/my_mri_vessel_config.docker.json \
   --output-dir /data/output
 ```
@@ -220,7 +229,16 @@ Minimal MRI config example:
 Container file:
 - [MRI-vesselness.dockerfile](MRI-vesselness.dockerfile)
 
-Build:
+Docker Hub repository:
+- [amrukwa/ronald-mri](https://hub.docker.com/repository/docker/amrukwa/ronald-mri/general)
+
+Recommended pull command:
+
+```bash
+docker pull amrukwa/ronald-mri:latest
+```
+
+Local build alternative:
 
 ```bash
 docker build -f MRI-vesselness.dockerfile -t bronco-mri-vessels .
@@ -231,7 +249,7 @@ Run with a mounted data/config directory:
 ```bash
 docker run --rm \
   -v /absolute/path/to/data:/data \
-  bronco-mri-vessels \
+  amrukwa/ronald-mri:latest \
   --config /data/config.json \
   --output-dir /data/output
 ```
@@ -239,7 +257,7 @@ docker run --rm \
 Important:
 - the JSON config paths must point to paths inside the container, for example `/data/image.nii.gz`
 - mount the directory containing the MRI images, lung masks, config, and desired output location
-- the Docker image was successfully tested on the example `b_state0` config in this worktree
+- the Docker image `amrukwa/ronald-mri:latest` was successfully tested on the example `b_state0` config in this worktree
 - if you want outputs saved on your computer, make sure the output directory is inside the mounted `/data` tree
 
 ## Caliber Thresholds
@@ -358,6 +376,7 @@ At the batch level, the script writes:
 
 `branch_metrics.csv` contains per-branch measurements such as:
 - branch id
+- center distance
 - node ids
 - point count
 - path length
@@ -366,10 +385,16 @@ At the batch level, the script writes:
 - curvature
 - thickness summary
 
+Branch numbering is central-to-peripheral:
+- branch `1` is the branch whose center is closest to the vessel-mask bounding-box center
+- larger branch ids are progressively farther from that center
+- this is a centrality-based numbering rule, not an anatomical artery/vein labeling
+
 The graph CSV files describe the true traced skeleton graph:
 - `graph_nodes.csv`: one row per node with degree and node voxel count
 - `graph_node_points.csv`: node voxel coordinates
 - `graph_edges.csv`: one row per edge
+- `graph_edges.csv` uses the same central-to-peripheral edge numbering as `branch_metrics.csv`
 - `graph_edge_points.csv`: traced edge voxel coordinates
 
 `study_metrics.csv` is a flattened one-row-per-study summary for easier spreadsheet analysis.
