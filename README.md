@@ -65,3 +65,9 @@ python examples/01_segmentation.py
 
 Example usage can be found in `examples/whole_pipeline.py`, note that depending on your IDE configuration supplied
 in the example path strings may not be correct, adjust for personal usage.
+
+## Citation
+
+If you use this work, please cite:
+
+> Mrukwa A, Polańska A, et al. Can Proper Vessel Segmentation Improve Early-Stage Lung Cancer Detection? Poster DATA-005, European Molecular Imaging Meeting (EMIM 2026), Ljubljana, Slovenia, 2026.
