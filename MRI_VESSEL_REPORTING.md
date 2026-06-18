@@ -408,3 +408,9 @@ If you only need the final numbers for one or a few cases:
 If you want branch-level or centerline-level inspection:
 - use `metrics/branch_metrics.csv`
 - use the `centerlines/*.csv` files
+
+## Citation
+
+If you use this work, please cite:
+
+> Mrukwa A, Polańska A, et al. Can Proper Vessel Segmentation Improve Early-Stage Lung Cancer Detection? Poster DATA-005, European Molecular Imaging Meeting (EMIM 2026), Ljubljana, Slovenia, 2026.
