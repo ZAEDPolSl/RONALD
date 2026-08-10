@@ -195,3 +195,20 @@ This means:
 Branch numbering is central-to-peripheral. Branch `1` is closest to the
 vessel-mask bounding-box center; larger branch ids are farther from that center.
 This is not anatomical artery/vein labeling.
+
+## Practical Recommendation
+
+If you only need the final numbers for one or a few cases:
+- use `metrics/vessel_metrics.json` for the full structured report
+- use `study_metrics.csv` if you want a spreadsheet-friendly summary
+
+If you want branch-level or centerline-level inspection:
+- use `metrics/branch_metrics.csv`
+- use the `centerlines/*.csv` files
+
+## Citation
+
+If you use this work, please cite:
+
+> Mrukwa A, Polańska A, et al. Can Proper Vessel Segmentation Improve Early-Stage Lung Cancer Detection? Poster DATA-005, European Molecular Imaging Meeting (EMIM 2026), Ljubljana, Slovenia, 2026.
+
