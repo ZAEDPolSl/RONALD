@@ -1,8 +1,7 @@
 # MRI Vessel Reporting
 
-This document describes the currently implemented MRI vessel reporting workflow.
-
-Run all commands below from the repository root directory.
+This document describes the MRI lung-mask and vessel-reporting workflow.
+Run commands from the repository root.
 
 ## Scope
 
@@ -11,34 +10,31 @@ Current biological scope:
 - no arterial vs venous split
 
 Current processing scope:
-- input is a JSON config
-- each study must provide:
-  - path to MRI image
-  - path to lung mask
+- input is a JSON config with MRI image paths
+- the pipeline generates the MRI lung mask automatically
 - vessel segmentation runs in MRI mode
 - outputs are written per study plus batch-level summary files
-- the only supported MRI entry point is the batch config-driven runner
 
-## What You Need Before You Start
+The MRI path is heuristic and was tuned on available example data. It should be
+visually checked on new acquisition protocols before quantitative use.
 
-For each case, you need:
-- one lung MRI image
-- one binary lung mask for that MRI
+## Input Assumption
 
-Important:
-- the script does not create the lung mask for you
-- the lung mask must already exist
-- the MRI image can be a regular image file such as `.nii.gz`, or a DICOM series directory
-- the lung mask should be a binary image file in the same physical space as the MRI
-- the lung mask should cover both lungs
+For each case, you need one lung MRI image. The image may be a `.nii.gz`, `.nrrd`,
+or a DICOM series directory readable by SimpleITK/CTools.
 
-If you are not comfortable with Python environments, the Docker option below is usually the easiest way to run the pipeline.
+Important limitation:
+- the MRI lung segmentation assumes the scan contains some surrounding body
+- if the image is tightly cropped at the lungs, the body-versus-air model can fail
+- outputs should be inspected, especially on new low-field MRI protocols
+
+The pipeline saves the lung mask in the same image geometry as the input scan:
+dimensions, voxel spacing, origin, and orientation/direction are copied from the
+MRI image.
 
 ## Quick Start
 
-### Option 1. Python
-
-1. Create and activate an environment:
+### Python
 
 ```bash
 python -m venv .venv-mri
@@ -46,131 +42,57 @@ source .venv-mri/bin/activate
 pip install -r mri-requirements.txt
 ```
 
-2. Copy the example config and edit it:
+Copy and edit the example config:
 
 ```bash
 cp mri_vessel_reporting_config.example.json my_mri_vessel_config.json
 ```
 
-Edit `my_mri_vessel_config.json` so that it contains:
-- your MRI image path
-- your lung mask path
-- your desired output directory
+Set each study `image` to an MRI image file or DICOM series directory:
 
-If your image is stored as DICOM, set `image` to the directory containing that DICOM series.
+```json
+{
+  "output_dir": "/absolute/path/to/output",
+  "caliber_thresholds_mm": {
+    "small": 2.0,
+    "large": 5.0
+  },
+  "studies": [
+    {
+      "name": "patient_001",
+      "image": "/absolute/path/to/mri_image.nii.gz"
+    }
+  ]
+}
+```
 
-3. Run the pipeline:
+Run:
 
 ```bash
 python calculate_vesselness_stats.py --config my_mri_vessel_config.json
 ```
 
-4. Open the output folder listed in the config.
+### Docker
 
-Main output files are:
-- per-case `metrics/vessel_metrics.json`
-- per-case `metrics/branch_metrics.csv`
-- batch-level `study_metrics.csv`
-
-### Option 2. Docker
-
-Docker Hub repository:
-- [amrukwa/ronald-mri](https://hub.docker.com/repository/docker/amrukwa/ronald-mri/general)
-
-1. Pull the prebuilt Docker image:
-
-```bash
-docker pull amrukwa/ronald-mri:latest
-```
-
-If you prefer to build locally from this repository instead:
+Build locally:
 
 ```bash
 docker build -f MRI-vesselness.dockerfile -t bronco-mri-vessels .
 ```
 
-2. Copy the example config and edit it so that the paths are valid inside the container:
-
-```bash
-cp mri_vessel_reporting_config.example.json my_mri_vessel_config.docker.json
-```
-
-Example:
-- if you mount `/absolute/path/to/data` to `/data`
-- then the config should use paths like `/data/case1/image.nii.gz`
-- the output directory in the config should also be inside `/data` if you want the results on your host machine
-
-3. Run the container:
+Run with a mounted data/config directory:
 
 ```bash
 docker run --rm \
   -v /absolute/path/to/data:/data \
-  amrukwa/ronald-mri:latest \
-  --config /data/my_mri_vessel_config.docker.json
-```
-
-Optional:
-
-```bash
-docker run --rm \
-  -v /absolute/path/to/data:/data \
-  amrukwa/ronald-mri:latest \
-  --config /data/my_mri_vessel_config.docker.json \
+  bronco-mri-vessels \
+  --config /data/config.json \
   --output-dir /data/output
 ```
 
-4. Open the output folder on your host machine.
-
-## Requirements
-
-Minimal Python dependencies for the MRI vessel reporting workflow are listed in:
-- [mri-requirements.txt](mri-requirements.txt)
-- [mri-requirements.lock.txt](mri-requirements.lock.txt)
-
-Install with:
-
-```bash
-python -m venv .venv-mri
-source .venv-mri/bin/activate
-pip install -r mri-requirements.txt
-```
-
-For most users, `mri-requirements.txt` is the recommended install.
-
-For an exact pinned environment matching the frozen MRI setup used in this worktree:
-
-```bash
-python -m venv .venv-mri
-source .venv-mri/bin/activate
-pip install -r mri-requirements.lock.txt
-```
-
-The MRI path uses the local `ctools` package for robust medical-image I/O in the batch runner.
-This means the commands should be run from this repository, not from a copied standalone script.
-
-## Entry Point
-
-Main script:
-- [calculate_vesselness_stats.py](calculate_vesselness_stats.py)
-
-Run:
-
-```bash
-python calculate_vesselness_stats.py --config path/to/config.json
-```
-
-Optional:
-
-```bash
-python calculate_vesselness_stats.py --config path/to/config.json --output-dir path/to/output
-```
-
-If `--output-dir` is not provided, the script uses:
-1. `output_dir` from the config, if present
-2. otherwise `<config parent>/mri_vessel_reports`
-
-All MRI runs should go through the config-driven batch runner, even for a single case.
-Do not use the CT example scripts in `examples/` for this MRI workflow.
+Important:
+- config paths must be valid inside the container, e.g. `/data/image.nii.gz`
+- output should be inside the mounted directory if you want it on the host
 
 ## Config Format
 
@@ -189,8 +111,7 @@ Schema:
   "studies": [
     {
       "name": "case_001",
-      "image": "/absolute/path/to/image.nii.gz",
-      "lung_mask": "/absolute/path/to/lung_mask.nii.gz"
+      "image": "/absolute/path/to/image.nii.gz"
     }
   ]
 }
@@ -198,163 +119,39 @@ Schema:
 
 Notes:
 - `studies` must be a non-empty list
-- each study must contain `image` and `lung_mask`
+- each study must contain `image`
 - `name` is optional; if omitted, it is derived from the image filename
 - `image` can point to a regular image file or a DICOM series directory
-- if `image` points to DICOM, it should point to one directory containing one study/series to be read
-- `lung_mask` should point to a binary mask image file
-- all paths inside the config must be valid in the environment where the script runs
-
-Minimal MRI config example:
-
-```json
-{
-  "output_dir": "/absolute/path/to/output",
-  "caliber_thresholds_mm": {
-    "small": 2.0,
-    "large": 5.0
-  },
-  "studies": [
-    {
-      "name": "patient_001",
-      "image": "/absolute/path/to/mri_image.nii.gz",
-      "lung_mask": "/absolute/path/to/lung_mask.nii.gz"
-    }
-  ]
-}
-```
-
-## Docker
-
-Container file:
-- [MRI-vesselness.dockerfile](MRI-vesselness.dockerfile)
-
-Docker Hub repository:
-- [amrukwa/ronald-mri](https://hub.docker.com/repository/docker/amrukwa/ronald-mri/general)
-
-Recommended pull command:
-
-```bash
-docker pull amrukwa/ronald-mri:latest
-```
-
-Local build alternative:
-
-```bash
-docker build -f MRI-vesselness.dockerfile -t bronco-mri-vessels .
-```
-
-Run with a mounted data/config directory:
-
-```bash
-docker run --rm \
-  -v /absolute/path/to/data:/data \
-  amrukwa/ronald-mri:latest \
-  --config /data/config.json \
-  --output-dir /data/output
-```
-
-Important:
-- the JSON config paths must point to paths inside the container, for example `/data/image.nii.gz`
-- mount the directory containing the MRI images, lung masks, config, and desired output location
-- the Docker image `amrukwa/ronald-mri:latest` was successfully tested on the example `b_state0` config in this worktree
-- if you want outputs saved on your computer, make sure the output directory is inside the mounted `/data` tree
-
-## Caliber Thresholds
-
-The reporting bins are configurable in the JSON config.
-
-For example:
-
-```json
-"caliber_thresholds_mm": {
-  "small": 2.0,
-  "large": 5.0
-}
-```
-
-means:
-- small: thickness `< 2.0 mm`
-- medium: thickness `>= 2.0 mm` and `< 5.0 mm`
-- large: thickness `>= 5.0 mm`
-
-These are operational reporting bins for MRI, that can be adjusted.
+- if `image` points to DICOM, it should point to one directory containing one series
+- all paths must be valid in the environment where the script runs
 
 ## Segmentation Workflow
 
 Implemented in:
+- [bronco/segmentation/lungs_segmentation.py](bronco/segmentation/lungs_segmentation.py)
 - [bronco/segmentation/vessel_segmentation.py](bronco/segmentation/vessel_segmentation.py)
 
-The MRI reporting script currently runs with:
-- `mode="mri"`
-- `check_mediastinum_connectivity=True`
+MRI lung segmentation:
+- fits a 2-component GMM to separate bright body from dark air/background
+- derives internal lung-cavity seeds from the filled body envelope
+- fills hole-like lung gaps with 2D majority filling
+- refines central/hilar regions with random walker constrained by mediastinum and hull priors
+- saves an exploratory `air_roi` mask from the same body/cavity model
 
-## Reported Statistics
+MRI vessel segmentation:
+- runs Frangi vesselness in a small lung-context band
+- thresholds vesselness with BIC-selected GMM foreground
+- suppresses obvious airway/air-lumen responses using the generated `air_roi`
+- keeps vessel components that extend beyond the surface band, reducing flat edge artifacts
 
-Metric helpers live in:
-- [bronco/vessel_metrics.py](bronco/vessel_metrics.py)
-
-Branch-wise measurements are computed on the true traced skeleton graph, not a display-adjusted graph with centroid-shifted node endpoints.
-
-Per-study reported statistics currently include:
-
-### 1. Volume
-- vessel voxel count
-- vessel volume in `mm^3`
-- vessel volume in `mL`
-- lung volume in `mm^3`
-- lung volume in `mL`
-
-### 2. Length
-- total skeleton length in `mm`
-- total skeleton length in `cm`
-
-### 3. Thickness
-- mean
-- median
-- std
-- min
-- max
-- p10 / p25 / p75 / p90
-
-### 4. Tortuosity
-- mean
-- median
-- max
-
-Definition:
-- branch path length / straight endpoint-to-endpoint distance
-
-### 5. Curvature
-- mean
-- median
-- max
-
-Definition:
-- local bending estimated from discrete 3D centerline points
-
-### 6. Branching Summary
-- branch count
-- endpoint count
-- junction count
-- connected components in vessel mask
-- connected components in skeleton graph
-
-### 7. Caliber Distribution
-- configured thickness thresholds
-- fraction of skeleton points in small / medium / large bins
-- fraction of vessel voxels in small / medium / large bins
-
-### 8. Small-Vessel Summary
-- small-vessel skeleton length
-- small-vessel skeleton length fraction
-- large-vessel skeleton length
-- large-vessel skeleton length fraction
-- small-vessel skeleton length per mL of lung
+The air ROI is only a rough helper for suppressing airway-like Frangi responses.
+It is not a validated airway segmentation.
 
 ## Outputs
 
 For each study, the script writes:
+- `masks/lung_mask.nrrd`
+- `masks/air_roi.nrrd`
 - `masks/mediastinum_mask.nrrd`
 - `masks/vessel_mask.nrrd`
 - `centerlines/skeleton.nrrd`
@@ -369,42 +166,32 @@ At the batch level, the script writes:
 - `reports.json`
 - `study_metrics.csv`
 
-`vessel_metrics.json` includes:
-- input paths
-- output paths
-- computed statistics
+## Reported Statistics
 
-`branch_metrics.csv` contains per-branch measurements such as:
-- branch id
-- center distance
-- node ids
-- point count
-- path length
-- straight length
-- tortuosity
-- curvature
-- thickness summary
+Per-study statistics include:
+- vessel volume and lung volume
+- total skeleton length
+- thickness summaries
+- tortuosity summaries
+- curvature summaries
+- branch, endpoint, junction, and component counts
+- configurable small/medium/large caliber distribution
+- small-vessel length summaries
 
-Branch numbering is central-to-peripheral:
-- branch `1` is the branch whose center is closest to the vessel-mask bounding-box center
-- larger branch ids are progressively farther from that center
-- this is a centrality-based numbering rule, not an anatomical artery/vein labeling
+The reporting bins are configured in the JSON config:
 
-The graph CSV files describe the true traced skeleton graph:
-- `graph_nodes.csv`: one row per node with degree and node voxel count
-- `graph_node_points.csv`: node voxel coordinates
-- `graph_edges.csv`: one row per edge
-- `graph_edges.csv` uses the same central-to-peripheral edge numbering as `branch_metrics.csv`
-- `graph_edge_points.csv`: traced edge voxel coordinates
+```json
+"caliber_thresholds_mm": {
+  "small": 2.0,
+  "large": 5.0
+}
+```
 
-`study_metrics.csv` is a flattened one-row-per-study summary for easier spreadsheet analysis.
+This means:
+- small: thickness `< 2.0 mm`
+- medium: thickness `>= 2.0 mm` and `< 5.0 mm`
+- large: thickness `>= 5.0 mm`
 
-## Practical Recommendation
-
-If you only need the final numbers for one or a few cases:
-- use `metrics/vessel_metrics.json` for the full structured report
-- use `study_metrics.csv` if you want a spreadsheet-friendly summary
-
-If you want branch-level or centerline-level inspection:
-- use `metrics/branch_metrics.csv`
-- use the `centerlines/*.csv` files
+Branch numbering is central-to-peripheral. Branch `1` is closest to the
+vessel-mask bounding-box center; larger branch ids are farther from that center.
+This is not anatomical artery/vein labeling.

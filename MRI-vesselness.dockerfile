@@ -7,8 +7,8 @@ ENV PYTHONPATH=/app
 WORKDIR /app
 
 COPY ctools /app/ctools
-COPY mri-requirements.txt /app/mri-requirements.txt
-RUN pip install --no-cache-dir -r /app/mri-requirements.txt
+COPY mri-requirements.lock.txt /app/mri-requirements.lock.txt
+RUN pip install --no-cache-dir -r /app/mri-requirements.lock.txt
 
 COPY bronco /app/bronco
 COPY calculate_vesselness_stats.py /app/calculate_vesselness_stats.py

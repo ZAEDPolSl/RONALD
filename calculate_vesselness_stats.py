@@ -10,6 +10,7 @@ import SimpleITK as sitk
 from ctools import ImageInstance
 from tqdm import tqdm
 
+from bronco.segmentation.lungs_segmentation import lungs_segmentation
 from bronco.segmentation.mediastinum_segmentation import mediastinum_segmentation
 from bronco.segmentation.vessel_segmentation import vessel_segmentation
 from bronco.vessel_metrics import summarize_reporting, get_skeleton_image, build_skeleton_graph
@@ -46,10 +47,8 @@ def load_config(path: Path) -> dict:
         raise ValueError("Config must contain a non-empty 'studies' list.")
 
     for index, study in enumerate(studies, start=1):
-        if "image" not in study or "lung_mask" not in study:
-            raise ValueError(
-                f"Study {index} must contain both 'image' and 'lung_mask' paths."
-            )
+        if "image" not in study:
+            raise ValueError(f"Study {index} must contain an 'image' path.")
 
     return config
 
@@ -118,7 +117,6 @@ def read_image(path: Path) -> sitk.Image:
 
 def run_case(
     image_path: Path,
-    lung_mask_path: Path,
     case_output_dir: Path,
     caliber_thresholds_mm: dict[str, object],
     case_name: str,
@@ -134,13 +132,20 @@ def run_case(
         print(f"[{case_name}] {message}", flush=True)
 
     with tqdm(total=11, desc=f"{case_name}", unit="step", leave=False) as progress:
+        lung_mask_output_path = masks_dir / "lung_mask.nrrd"
+        air_roi_output_path = masks_dir / "air_roi.nrrd"
         set_stage(progress, "read image")
         image = read_image(image_path)
         progress.update(1)
 
-        set_stage(progress, "read lung mask")
-        lungs = read_image(lung_mask_path)
-        lungs_binary = sitk.Cast(lungs > 0, sitk.sitkUInt8)
+        set_stage(progress, "MRI lung segmentation")
+        lungs_binary, air_roi = lungs_segmentation(
+            image,
+            mode="mri",
+            return_air_roi=True,
+        )
+        lungs_binary = sitk.Cast(lungs_binary > 0, sitk.sitkUInt8)
+        air_roi = sitk.Cast(air_roi > 0, sitk.sitkUInt8)
         progress.update(1)
 
         set_stage(progress, "mediastinum")
@@ -160,10 +165,13 @@ def run_case(
             sitk_mediastinum=mediastinum,
             mode="mri",
             check_mediastinum_connectivity=True,
+            sitk_airway_lumen=air_roi,
         )
         progress.update(1)
 
         set_stage(progress, "write early masks")
+        sitk.WriteImage(lungs_binary, str(lung_mask_output_path))
+        sitk.WriteImage(air_roi, str(air_roi_output_path))
         sitk.WriteImage(mediastinum, str(mediastinum_path))
         sitk.WriteImage(vessel_mask, str(vessel_mask_path))
         progress.update(1)
@@ -177,9 +185,9 @@ def run_case(
         metric_offset_zyx = tuple(reversed(metric_bbox_xyz[0]))
 
         del image
-        del lungs
         del lungs_binary
         del mediastinum
+        del air_roi
         gc.collect()
 
         set_stage(progress, "skeletonize")
@@ -204,6 +212,7 @@ def run_case(
             graph,
             skeleton_image_metrics,
             thickness_image,
+            center_mask=vessel_mask_metrics,
         )
         progress.update(1)
 
@@ -212,6 +221,8 @@ def run_case(
         graph_outputs = write_graph_tables(
             centerlines_dir,
             graph,
+            reference_image=skeleton_image_metrics,
+            center_mask=vessel_mask_metrics,
             index_offset_zyx=metric_offset_zyx,
         )
         progress.update(1)
@@ -235,9 +246,10 @@ def run_case(
         report = {
             "inputs": {
                 "image": str(image_path),
-                "lung_mask": str(lung_mask_path),
             },
             "outputs": {
+                "lung_mask": str(lung_mask_output_path),
+                "air_roi": str(air_roi_output_path),
                 "mediastinum_mask": str(mediastinum_path),
                 "vessel_mask": str(vessel_mask_path),
                 "skeleton": str(skeleton_path),
@@ -281,7 +293,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "MRI vessel reporting pipeline driven by a JSON config. "
-            "The config provides caliber thresholds and a list of image/lung-mask pairs."
+            "The config provides caliber thresholds and a list of MRI studies."
         )
     )
     parser.add_argument("--config", type=Path, required=True, help="Input JSON config.")
@@ -300,13 +312,11 @@ def main() -> None:
 
     for index, study in enumerate(tqdm(studies, desc="Studies", unit="study"), start=1):
         image_path = Path(study["image"])
-        lung_mask_path = Path(study["lung_mask"])
         case_name = study.get("name") or derive_case_name(image_path)
         case_output_dir = output_root / case_name
 
         report = run_case(
             image_path=image_path,
-            lung_mask_path=lung_mask_path,
             case_output_dir=case_output_dir,
             caliber_thresholds_mm=caliber_thresholds_mm,
             case_name=case_name,

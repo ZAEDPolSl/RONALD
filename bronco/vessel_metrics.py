@@ -65,6 +65,88 @@ def image_points_to_physical(indices_zyx: np.ndarray, image: sitk.Image) -> np.n
     return origin + scaled_indices @ direction.T
 
 
+def image_center_mm(image: sitk.Image) -> np.ndarray:
+    size_xyz = np.asarray(image.GetSize(), dtype=np.float64)
+    center_index_xyz = (size_xyz - 1.0) / 2.0
+    return np.asarray(
+        image.TransformContinuousIndexToPhysicalPoint(tuple(center_index_xyz)),
+        dtype=np.float64,
+    )
+
+
+def mask_bounding_box_center_mm(mask: sitk.Image) -> np.ndarray | None:
+    mask_u8 = sitk.Cast(mask > 0, sitk.sitkUInt8)
+    stats = sitk.LabelShapeStatisticsImageFilter()
+    stats.Execute(mask_u8)
+    if not stats.HasLabel(1):
+        return None
+
+    x, y, z, size_x, size_y, size_z = stats.GetBoundingBox(1)
+    center_index_xyz = (
+        float(x) + (float(size_x) - 1.0) / 2.0,
+        float(y) + (float(size_y) - 1.0) / 2.0,
+        float(z) + (float(size_z) - 1.0) / 2.0,
+    )
+    return np.asarray(
+        mask.TransformContinuousIndexToPhysicalPoint(center_index_xyz),
+        dtype=np.float64,
+    )
+
+
+def branch_ordering_center_mm(
+    reference_image: sitk.Image,
+    center_mask: sitk.Image | None = None,
+) -> np.ndarray:
+    if center_mask is not None:
+        center_mm = mask_bounding_box_center_mm(center_mask)
+        if center_mm is not None:
+            return center_mm
+    return image_center_mm(reference_image)
+
+
+def ordered_graph_edges(
+    graph,
+    reference_image: sitk.Image | None = None,
+    center_mask: sitk.Image | None = None,
+) -> list[dict[str, object]]:
+    if graph is None:
+        return []
+
+    center_mm = None
+    if reference_image is not None:
+        center_mm = branch_ordering_center_mm(reference_image, center_mask=center_mask)
+
+    edge_rows: list[dict[str, object]] = []
+    for raw_edge_id, (u, v, data) in enumerate(graph.edges(data=True), start=1):
+        points_zyx = np.asarray(data["pts"], dtype=np.int32)
+        points_mm = (
+            image_points_to_physical(points_zyx, reference_image)
+            if reference_image is not None
+            else np.zeros((0, 3), dtype=np.float64)
+        )
+        if points_mm.size and center_mm is not None:
+            branch_center_mm = np.mean(points_mm, axis=0)
+            center_distance_mm = float(np.linalg.norm(branch_center_mm - center_mm))
+        else:
+            center_distance_mm = float("inf")
+        edge_rows.append(
+            {
+                "raw_edge_id": int(raw_edge_id),
+                "node_u": int(u),
+                "node_v": int(v),
+                "data": data,
+                "points_zyx": points_zyx,
+                "points_mm": points_mm,
+                "center_distance_mm": center_distance_mm,
+            }
+        )
+
+    edge_rows.sort(key=lambda row: (row["center_distance_mm"], row["raw_edge_id"]))
+    for branch_id, row in enumerate(edge_rows, start=1):
+        row["branch_id"] = int(branch_id)
+    return edge_rows
+
+
 def get_skeleton_image(mask: sitk.Image) -> sitk.Image:
     mask_array = sitk.GetArrayFromImage(mask) > 0
     skeleton = skeletonize(mask_array).astype(np.uint8)
@@ -228,6 +310,7 @@ def compute_branch_metrics(
     graph,
     reference_image: sitk.Image,
     thickness_image: sitk.Image,
+    center_mask: sitk.Image | None = None,
 ) -> list[dict[str, float | int]]:
     if graph is None:
         return []
@@ -235,10 +318,18 @@ def compute_branch_metrics(
     thickness_arr = sitk.GetArrayFromImage(thickness_image).astype(np.float32)
     branch_rows: list[dict[str, float | int]] = []
 
-    for branch_id, (u, v, data) in enumerate(graph.edges(data=True), start=1):
-        points_zyx = np.asarray(data["pts"], dtype=np.int32)
-        points_mm = image_points_to_physical(points_zyx, reference_image)
+    for edge_row in ordered_graph_edges(
+        graph,
+        reference_image=reference_image,
+        center_mask=center_mask,
+    ):
+        branch_id = int(edge_row["branch_id"])
+        u = int(edge_row["node_u"])
+        v = int(edge_row["node_v"])
+        points_zyx = np.asarray(edge_row["points_zyx"], dtype=np.int32)
+        points_mm = np.asarray(edge_row["points_mm"], dtype=np.float64)
         path_length_mm = edge_length_mm(points_zyx, reference_image)
+        center_distance_mm = float(edge_row["center_distance_mm"])
 
         if len(points_mm) >= 2:
             straight_length_mm = float(np.linalg.norm(points_mm[-1] - points_mm[0]))
@@ -263,6 +354,7 @@ def compute_branch_metrics(
                 "branch_id": int(branch_id),
                 "node_u": int(u),
                 "node_v": int(v),
+                "center_distance_mm": float(center_distance_mm),
                 "point_count": int(len(points_zyx)),
                 "path_length_mm": float(path_length_mm),
                 "straight_length_mm": float(straight_length_mm),
@@ -296,6 +388,7 @@ def write_branch_metrics_csv(path: Path, branch_rows: list[dict[str, float | int
         "branch_id",
         "node_u",
         "node_v",
+        "center_distance_mm",
         "point_count",
         "path_length_mm",
         "straight_length_mm",
@@ -316,6 +409,8 @@ def write_branch_metrics_csv(path: Path, branch_rows: list[dict[str, float | int
 def write_graph_tables(
     output_dir: Path,
     graph,
+    reference_image: sitk.Image | None = None,
+    center_mask: sitk.Image | None = None,
     index_offset_zyx: tuple[int, int, int] = (0, 0, 0),
 ) -> dict[str, str]:
     nodes_path = output_dir / "graph_nodes.csv"
@@ -327,8 +422,14 @@ def write_graph_tables(
         for path, fieldnames in (
             (nodes_path, ["node_id", "degree", "point_count"]),
             (node_points_path, ["node_id", "point_index", "z", "y", "x"]),
-            (edges_path, ["edge_id", "node_u", "node_v", "point_count"]),
-            (edge_points_path, ["edge_id", "node_u", "node_v", "point_index", "z", "y", "x"]),
+            (
+                edges_path,
+                ["edge_id", "node_u", "node_v", "center_distance_mm", "point_count"],
+            ),
+            (
+                edge_points_path,
+                ["edge_id", "node_u", "node_v", "point_index", "z", "y", "x"],
+            ),
         ):
             with path.open("w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -378,16 +479,21 @@ def write_graph_tables(
     with edges_path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["edge_id", "node_u", "node_v", "point_count"],
+            fieldnames=["edge_id", "node_u", "node_v", "center_distance_mm", "point_count"],
         )
         writer.writeheader()
-        for edge_id, (u, v, data) in enumerate(graph.edges(data=True), start=1):
+        for edge_row in ordered_graph_edges(
+            graph,
+            reference_image=reference_image,
+            center_mask=center_mask,
+        ):
             writer.writerow(
                 {
-                    "edge_id": int(edge_id),
-                    "node_u": int(u),
-                    "node_v": int(v),
-                    "point_count": int(len(data["pts"])),
+                    "edge_id": int(edge_row["branch_id"]),
+                    "node_u": int(edge_row["node_u"]),
+                    "node_v": int(edge_row["node_v"]),
+                    "center_distance_mm": float(edge_row["center_distance_mm"]),
+                    "point_count": int(len(edge_row["points_zyx"])),
                 }
             )
 
@@ -397,15 +503,19 @@ def write_graph_tables(
             fieldnames=["edge_id", "node_u", "node_v", "point_index", "z", "y", "x"],
         )
         writer.writeheader()
-        for edge_id, (u, v, data) in enumerate(graph.edges(data=True), start=1):
-            points_zyx = np.asarray(data["pts"], dtype=np.int32)
+        for edge_row in ordered_graph_edges(
+            graph,
+            reference_image=reference_image,
+            center_mask=center_mask,
+        ):
+            points_zyx = np.asarray(edge_row["points_zyx"], dtype=np.int32)
             for point_index, point in enumerate(points_zyx):
                 point = point + np.asarray(index_offset_zyx, dtype=np.int32)
                 writer.writerow(
                     {
-                        "edge_id": int(edge_id),
-                        "node_u": int(u),
-                        "node_v": int(v),
+                        "edge_id": int(edge_row["branch_id"]),
+                        "node_u": int(edge_row["node_u"]),
+                        "node_v": int(edge_row["node_v"]),
                         "point_index": int(point_index),
                         "z": int(point[0]),
                         "y": int(point[1]),

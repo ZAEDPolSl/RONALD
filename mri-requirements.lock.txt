@@ -1,5 +1,5 @@
 ./ctools
-ImageIO==2.37.3
+imageio==2.37.3
 itk==5.4.5
 itk-core==5.4.5
 itk-filtering==5.4.5
@@ -14,11 +14,16 @@ networkx==3.6.1
 numba==0.61.2
 numpy==2.2.6
 packaging==26.2
+pandas==2.3.3
 pillow==12.2.0
+python-dateutil==2.9.0.post0
+pytz==2026.3.post1
 scikit-image==0.25.2
 scikit-learn==1.8.0
 scipy==1.17.1
 simpleitk==2.5.4
+six==1.17.0
 threadpoolctl==3.6.0
-tifffile==2026.5.2
+tifffile==2026.3.3
 tqdm==4.67.1
+tzdata==2026.3

@@ -2,6 +2,7 @@ import gc
 
 import numpy as np
 import SimpleITK as sitk
+from scipy import ndimage as ndi
 from skimage.filters import frangi
 from skimage.measure import regionprops
 
@@ -9,6 +10,9 @@ from bronco.processing.gmm_thresholding import bic_gmm_foreground_mask
 
 MRI_FRANGI_SIGMAS = (0.6, 0.9, 1.2, 1.8, 2.5, 3.5)
 MRI_CROP_MARGIN_VOXELS = 12
+MRI_FRANGI_CONTEXT_RADIUS = 2
+MRI_AIRWAY_SUPPRESSION_RADIUS = 1
+MRI_SURFACE_COMPONENT_BAND_RADIUS = 3
 
 
 def _mask_bounding_box_xyz(sitk_mask, padding=0):
@@ -190,6 +194,122 @@ def _vesselness_filter_mri(
     return sitk_vessels, sitk_vesselness
 
 
+def _ball(radius):
+    coords = np.ogrid[
+        -radius : radius + 1,
+        -radius : radius + 1,
+        -radius : radius + 1,
+    ]
+    return coords[0] ** 2 + coords[1] ** 2 + coords[2] ** 2 <= radius**2
+
+
+def _threshold_mri_vesselness_inside_lungs(vesselness_np, lungs_np):
+    vessels = np.zeros_like(lungs_np, dtype=bool)
+    inside = vesselness_np[lungs_np]
+    if inside.size == 0:
+        return vessels
+    foreground_mask, _ = bic_gmm_foreground_mask(inside)
+    vessels[lungs_np] = foreground_mask.astype(bool)
+    return vessels
+
+
+def _rough_mri_airway_lumen_mask(sitk_image, sitk_lungs, min_component_voxels=15):
+    """Return an exploratory dark-lumen mask for MRI vessel suppression only.
+
+    This is not a validated airway segmentation. It is intentionally conservative
+    and is used only to remove obvious dark-airway responses from MRI Frangi
+    vessel candidates.
+    """
+    from bronco.segmentation.lungs_segmentation import _mri_air_roi_mask
+
+    image_np = sitk.GetArrayFromImage(sitk.Cast(sitk_image, sitk.sitkFloat32)).astype(
+        np.float32
+    )
+    airway = _mri_air_roi_mask(
+        image_np,
+        cavity_masks=None,
+        min_component_voxels=min_component_voxels,
+    )
+
+    sitk_airway = sitk.GetImageFromArray(airway.astype(np.uint8))
+    sitk_airway.CopyInformation(sitk_image)
+    return sitk_airway
+
+
+def _keep_mri_vessel_components_crossing_surface_band(
+    vessels_np,
+    lungs_np,
+    sitk_lungs=None,
+    surface_radius=MRI_SURFACE_COMPONENT_BAND_RADIUS,
+):
+    if sitk_lungs is not None:
+        eroded = sitk.BinaryErode(
+            sitk.Cast(sitk_lungs > 0, sitk.sitkUInt8),
+            kernelRadius=(int(surface_radius),) * 3,
+            foregroundValue=1,
+        )
+        eroded_np = sitk.GetArrayFromImage(eroded) > 0
+    else:
+        eroded_np = ndi.binary_erosion(
+            lungs_np,
+            structure=_ball(int(surface_radius)),
+            iterations=1,
+            border_value=0,
+        )
+    surface_band = lungs_np & ~eroded_np
+    labels, n_labels = ndi.label(vessels_np, structure=np.ones((3, 3, 3), dtype=bool))
+    if n_labels == 0:
+        return vessels_np
+
+    interior_vessels = vessels_np & ~surface_band
+    labels_crossing_interior = np.unique(labels[interior_vessels])
+    labels_crossing_interior = labels_crossing_interior[labels_crossing_interior != 0]
+    return np.isin(labels, labels_crossing_interior)
+
+
+def _vesselness_filter_mri_with_context_cleanup(
+    sitk_image,
+    sitk_lungs,
+    sitk_airway_lumen=None,
+):
+    sitk_lungs = sitk.Cast(sitk_lungs > 0, sitk.sitkUInt8)
+    sitk_context = sitk.BinaryDilate(
+        sitk_lungs,
+        kernelRadius=(MRI_FRANGI_CONTEXT_RADIUS,) * 3,
+        foregroundValue=1,
+    )
+    _, sitk_vesselness_context = _vesselness_filter_mri(sitk_image, sitk_context)
+
+    lungs_np = sitk.GetArrayFromImage(sitk_lungs) > 0
+    vesselness_np = sitk.GetArrayFromImage(sitk_vesselness_context).astype(np.float32)
+    vesselness_np = np.where(lungs_np, vesselness_np, 0.0)
+    vessels_np = _threshold_mri_vesselness_inside_lungs(vesselness_np, lungs_np)
+
+    if sitk_airway_lumen is None:
+        sitk_airway_lumen = _rough_mri_airway_lumen_mask(sitk_image, sitk_lungs)
+    airway_np = sitk.GetArrayFromImage(sitk_airway_lumen) > 0
+    airway_band = ndi.binary_dilation(
+        airway_np,
+        structure=_ball(MRI_AIRWAY_SUPPRESSION_RADIUS),
+        iterations=1,
+    ) & lungs_np
+    vessels_np = vessels_np & ~airway_band
+
+    vessels_np = _keep_mri_vessel_components_crossing_surface_band(
+        vessels_np,
+        lungs_np,
+        sitk_lungs=sitk_lungs,
+        surface_radius=MRI_SURFACE_COMPONENT_BAND_RADIUS,
+    )
+    vesselness_np = np.where(vessels_np, vesselness_np, 0.0)
+
+    sitk_vessels = sitk.GetImageFromArray(vessels_np.astype(np.uint8))
+    sitk_vessels.CopyInformation(sitk_image)
+    sitk_vesselness = sitk.GetImageFromArray(vesselness_np.astype(np.float32))
+    sitk_vesselness.CopyInformation(sitk_image)
+    return sitk_vessels, sitk_vesselness
+
+
 def vesselness_filter(sitk_image, sitk_lungs, mode="ct"):
     if mode == "ct":
         return _vesselness_filter_ct(sitk_image, sitk_lungs)
@@ -301,12 +421,20 @@ def vessel_segmentation(
     sitk_mediastinum=None,
     mode="ct",
     check_mediastinum_connectivity=False,
+    sitk_airway_lumen=None,
 ):
-    sitk_vessels, sitk_vesselness = vesselness_filter(
-        sitk_image,
-        sitk_lungs,
-        mode=mode,
-    )
+    if mode == "mri":
+        sitk_vessels, sitk_vesselness = _vesselness_filter_mri_with_context_cleanup(
+            sitk_image,
+            sitk_lungs,
+            sitk_airway_lumen=sitk_airway_lumen,
+        )
+    else:
+        sitk_vessels, sitk_vesselness = vesselness_filter(
+            sitk_image,
+            sitk_lungs,
+            mode=mode,
+        )
 
     needs_connectivity = mode == "ct" or check_mediastinum_connectivity
     if needs_connectivity:

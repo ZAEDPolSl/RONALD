@@ -7,8 +7,7 @@
   "studies": [
     {
       "name": "case_001",
-      "image": "/absolute/path/to/image.nii.gz",
-      "lung_mask": "/absolute/path/to/lung_mask.nii.gz"
+      "image": "/absolute/path/to/image.nii.gz"
     }
   ]
 }
