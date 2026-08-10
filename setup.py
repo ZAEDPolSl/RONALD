@@ -1,3 +1,3 @@
 from setuptools import find_packages, setup
 
-setup(name="bronco", version="1.0", packages=find_packages())
+setup(name="ronald", version="1.0", packages=find_packages())

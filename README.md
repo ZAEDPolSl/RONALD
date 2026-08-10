@@ -1,4 +1,4 @@
-# BRONCO
+# RONALD
 This repository contains Python tools for thoracic airway and vessel analysis.
 The original workflow targets CT airway segmentation. The repository also
 includes an MRI vessel-reporting workflow that generates an MRI lung mask,
@@ -15,7 +15,7 @@ Features:
 - Segments airways from thoracic CT scans.
 - Uses Fast Marching algorithm for region growing.
 - Two velocity maps (gradient-based and vesselness) to guide segmentation.
-- Written in Python 3.10 for easy integration and flexibility.
+- Written in Python 3.11 for easy integration and flexibility.
 
 **Example output:**
 ![Image](/data/readme/airways_subplots.png)
@@ -46,10 +46,9 @@ python calculate_vesselness_stats.py --config mri_vessel_reporting_config.exampl
 Run with Docker:
 
 ```bash
-docker build -f MRI-vesselness.dockerfile -t bronco-mri-vessels .
 docker run --rm \
   -v /absolute/path/to/data:/data \
-  bronco-mri-vessels \
+  amrukwa/ronald-mri:latest \
   --config /data/config.json \
   --output-dir /data/output
 ```
@@ -62,19 +61,30 @@ See [MRI_VESSEL_REPORTING.md](MRI_VESSEL_REPORTING.md) for the full MRI workflow
 This project uses the [CTools](https://github.com/ZAEDPolSl/CTools) library as a git submodule. When cloning, use:
 
 ```bash
-git clone --recurse-submodules https://github.com/ZAEDPolSl/BRONCO.git
+git clone https://github.com/ZAEDPolSl/RONALD.git
+cd RONALD
+git checkout mri-vessel-deployment
+git submodule update --init --recursive
 ```
 
 Or if you've already cloned the repository:
 
 ```bash
+git checkout mri-vessel-deployment
 git submodule update --init --recursive
 ```
 
 ## Install Dependencies
 
+For MRI vessel reporting, Docker is the recommended way to run the pipeline:
+
+```bash
+docker pull amrukwa/ronald-mri:latest
+```
+
 ### Option 1: Using uv (recommended)
-[uv](https://docs.astral.sh/uv/) is a fast Python package manager. Install it first, then:
+[uv](https://docs.astral.sh/uv/) is a fast Python package manager. The project
+is pinned to Python 3.11 to match the Docker image. Install uv first, then:
 
 ```bash
 uv sync

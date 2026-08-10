@@ -36,6 +36,9 @@ MRI image.
 
 ### Python
 
+The Docker image is the reproducible reference runtime for MRI reporting. The
+source environment is pinned to Python 3.11 to match the Docker runtime.
+
 ```bash
 python -m venv .venv-mri
 source .venv-mri/bin/activate
@@ -74,10 +77,13 @@ python calculate_vesselness_stats.py --config my_mri_vessel_config.json
 
 ### Docker
 
-Build locally:
+Docker is the recommended way to run the MRI workflow. The published image is:
+[amrukwa/ronald-mri](https://hub.docker.com/repository/docker/amrukwa/ronald-mri).
+
+Pull the current image:
 
 ```bash
-docker build -f MRI-vesselness.dockerfile -t bronco-mri-vessels .
+docker pull amrukwa/ronald-mri:latest
 ```
 
 Run with a mounted data/config directory:
@@ -85,9 +91,15 @@ Run with a mounted data/config directory:
 ```bash
 docker run --rm \
   -v /absolute/path/to/data:/data \
-  bronco-mri-vessels \
+  amrukwa/ronald-mri:latest \
   --config /data/config.json \
   --output-dir /data/output
+```
+
+For development, you can also build the image locally:
+
+```bash
+docker build -f MRI-vesselness.dockerfile -t ronald-mri-vessels .
 ```
 
 Important:
@@ -211,4 +223,3 @@ If you want branch-level or centerline-level inspection:
 If you use this work, please cite:
 
 > Mrukwa A, Polańska A, et al. Can Proper Vessel Segmentation Improve Early-Stage Lung Cancer Detection? Poster DATA-005, European Molecular Imaging Meeting (EMIM 2026), Ljubljana, Slovenia, 2026.
-

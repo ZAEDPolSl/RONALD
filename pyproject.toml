@@ -1,5 +1,5 @@
 [project]
-name = "bronco"
+name = "ronald"
 version = "1.0.0"
 description = ""
 authors = [
@@ -7,7 +7,7 @@ authors = [
     {name = "Anna Mrukwa", email = "anna.mrukwa@polsl.pl"}
 ]
 readme = "README.md"
-requires-python = ">=3.10,<4.0.0"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "simpleitk (>=2.4.1,<3.0.0)",
     "opencv-python (>=4.11.0.86,<5.0.0.0)",
@@ -32,8 +32,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.uv.sources]
-# ctools is a local subpackage included in this repository. When developing bronco
+# ctools is a local subpackage included in this repository. When developing RONALD
 # standalone (it is a submodule of a larger workspace), the workspace=true
 # setting causes the uv tool to expect a workspace member. Point the source to
-# the local path instead so bronco can be used independently.
+# the local path instead so RONALD can be used independently.
 ctools = { path = "ctools" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["bronco"]
