@@ -1,25 +1,31 @@
+import math
 import os
-import numpy as np
-from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
 from copy import copy
+from itertools import combinations_with_replacement
+
+import numpy as np
 import SimpleITK as sitk
-
-from skimage.filters import sato
+from scipy import ndimage as ndi
+from scipy.ndimage import binary_fill_holes
 from skimage.measure import label
-from scipy.ndimage.morphology import binary_fill_holes
-
 from skimage.morphology import skeletonize
+from tqdm import tqdm
 
-from ronald.utils import display
-from ronald.external.sknw import build_sknw
 from ctools import ImageInstance
+from ronald.external.sknw import build_sknw
 from ronald.processing.gmm_thresholding import run_thresholding
-from ronald.segmentation.trachea_segmentation import trachea_main_bronchus_segmentation
 from ronald.processing.connected_components import (
     convex_hull_3d,
     find_largest_connected_component,
     find_most_similar_connected_component,
 )
+from ronald.segmentation.trachea_segmentation import trachea_main_bronchus_segmentation
+from ronald.utils import display
+
+
+SATO_MAX_WORKERS = 8
+SATO_EIGEN_CHUNK_DEPTH = 4
 
 
 def remove_leaked_airways(sitk_airways, sitk_lungs, sitk_trachea):
@@ -227,11 +233,134 @@ def gaussian_probabilities(data, mean, std_dev):
     return probabilities
 
 
-def sato_filter(sitk_image, sigmas=(0.5, 1, 2, 3, 5), thr=0.025):
-    image = sitk.GetArrayFromImage(sitk_image)  # prev sitk_bbv_scaffolding
-    image_sato = sato(image, list(sigmas), black_ridges=False)
-    image_sato = (image_sato - image_sato.min()) / (image_sato.max() - image_sato.min())
-    image_sato[image_sato < thr] = 0
+def _supported_sato_dtype(dtype):
+    """Match scikit-image's real-valued working dtype selection."""
+    if np.dtype(dtype).itemsize <= 4 and np.issubdtype(dtype, np.floating):
+        return np.float32
+    return np.float64
+
+
+def _parallel_hessian_elements(image, sigma, executor):
+    """Compute the same Gaussian Hessian as scikit-image, in parallel."""
+    sigma_by_axis = (sigma,) * image.ndim
+    # Preserve scikit-image 0.25's extended small-scale kernels exactly.
+    truncate = 8 if all(value > 1 for value in sigma_by_axis) else 100
+    scaled_sigma = tuple(value / math.sqrt(2) for value in sigma_by_axis)
+    filter_options = {
+        "sigma": scaled_sigma,
+        "mode": "reflect",
+        "cval": 0,
+        "truncate": truncate,
+    }
+    derivative_orders = tuple(
+        [0] * axis + [1] + [0] * (image.ndim - axis - 1) for axis in range(image.ndim)
+    )
+
+    gradient_futures = [
+        executor.submit(
+            ndi.gaussian_filter,
+            image,
+            order=order,
+            **filter_options,
+        )
+        for order in derivative_orders
+    ]
+    gradients = [future.result() for future in gradient_futures]
+
+    axis_pairs = combinations_with_replacement(range(image.ndim), 2)
+    hessian_futures = [
+        executor.submit(
+            ndi.gaussian_filter,
+            gradients[first_axis],
+            order=derivative_orders[second_axis],
+            **filter_options,
+        )
+        for first_axis, second_axis in axis_pairs
+    ]
+    return [future.result() for future in hessian_futures]
+
+
+def _sato_score_chunk(arguments):
+    """Calculate Sato scores for a small slab of Hessian matrices."""
+    start, stop, hessian_elements, sigma = arguments
+    spatial_shape = hessian_elements[0][start:stop].shape
+    dimension = len(spatial_shape)
+    matrices = np.empty(
+        spatial_shape + (dimension, dimension), dtype=hessian_elements[0].dtype
+    )
+    for element_index, (row, column) in enumerate(
+        combinations_with_replacement(range(dimension), 2)
+    ):
+        values = hessian_elements[element_index][start:stop]
+        matrices[..., row, column] = values
+        matrices[..., column, row] = values
+
+    # np.linalg.eigvalsh returns ascending values; Sato uses descending order.
+    eigenvalues = np.linalg.eigvalsh(matrices)[..., ::-1]
+    ridge_eigenvalues = np.maximum(eigenvalues[..., :-1], 0)
+    score = sigma**2 * np.prod(ridge_eigenvalues, axis=-1) ** (
+        1 / ridge_eigenvalues.shape[-1]
+    )
+    return start, stop, score
+
+
+def _parallel_sato(image, sigmas, max_workers, eigen_chunk_depth):
+    """Evaluate white-ridge Sato vesselness without full matrix volumes."""
+    if image.ndim not in (2, 3):
+        raise ValueError("Sato filtering supports only 2D and 3D images")
+    if eigen_chunk_depth < 1:
+        raise ValueError("eigen_chunk_depth must be at least 1")
+
+    image = image.astype(_supported_sato_dtype(image.dtype), copy=False)
+    image = -image  # Convert white ridges to the black-ridge convention.
+    response = np.zeros_like(image)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for sigma in sigmas:
+            hessian_elements = _parallel_hessian_elements(image, sigma, executor)
+            chunks = (
+                (
+                    start,
+                    min(start + eigen_chunk_depth, image.shape[0]),
+                    hessian_elements,
+                    sigma,
+                )
+                for start in range(0, image.shape[0], eigen_chunk_depth)
+            )
+            for start, stop, score in executor.map(_sato_score_chunk, chunks):
+                np.maximum(response[start:stop], score, out=response[start:stop])
+
+    return response
+
+
+def sato_filter(
+    sitk_image,
+    sigmas=(0.5, 1, 2, 3, 5),
+    thr=0.025,
+    max_workers=None,
+    eigen_chunk_depth=SATO_EIGEN_CHUNK_DEPTH,
+):
+    """Calculate normalized Sato vesselness with bounded CPU and memory use."""
+    if max_workers is None:
+        max_workers = min(SATO_MAX_WORKERS, os.cpu_count() or 1)
+    if max_workers < 1:
+        raise ValueError("max_workers must be at least 1")
+
+    image = sitk.GetArrayViewFromImage(sitk_image)
+    image_sato = _parallel_sato(
+        image,
+        tuple(sigmas),
+        max_workers=max_workers,
+        eigen_chunk_depth=eigen_chunk_depth,
+    )
+    image_sato -= image_sato.min()
+    maximum = image_sato.max()
+    if maximum > 0:
+        image_sato /= maximum
+        image_sato[image_sato < thr] = 0
+    else:
+        image_sato.fill(0)
+
     sitk_image_sato = sitk.GetImageFromArray(image_sato)
     sitk_image_sato.CopyInformation(sitk_image)
     return sitk_image_sato
