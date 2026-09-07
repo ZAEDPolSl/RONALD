@@ -1,5 +1,6 @@
-import numpy as np
 import heapq
+
+import numpy as np
 
 
 def calculate_triangle_area(a, b, c):
@@ -8,77 +9,90 @@ def calculate_triangle_area(a, b, c):
     return 0.5 * np.linalg.norm(np.cross(ab, ac))
 
 
-def visvalingam_whyatt_3d(points: np.ndarray, epsilon=0.51) -> np.ndarray:
-    """
-    Simplify a polyline in 3D using the Visvalingam-Whyatt algorithm with NumPy arrays.
-
-    Args:
-        points (numpy.ndarray): Ordered array of 3D points.
-        epsilon (float): Minimum effective area threshold.
-
-    Returns:
-        numpy.ndarray: Simplified array of 3D points.
-    """
-    if len(points) <= 2:
-        return points
-
-    points = points.copy()
-    N = len(points)
-    mask = np.ones(N, dtype=bool)
+def _indices_at_thresholds(points, thresholds):
+    """Run one elimination sequence and snapshot it at each threshold."""
+    point_count = len(points)
+    mask = np.ones(point_count, dtype=bool)
+    remaining_count = point_count
     heap = []
-    prev = np.arange(N)
-    next = np.arange(N)
-
-    # Set up prev/next pointers
-    prev[1:] = np.arange(N - 1)
-    next[:-1] = np.arange(1, N)
+    prev = np.arange(point_count)
+    next = np.arange(point_count)
+    prev[1:] = np.arange(point_count - 1)
+    next[:-1] = np.arange(1, point_count)
     prev[0] = -1
     next[-1] = -1
 
-    # Compute initial areas and heap
-    areas = np.full(N, np.inf)
-    for i in range(1, N - 1):
-        areas[i] = calculate_triangle_area(points[i - 1], points[i], points[i + 1])
-        heapq.heappush(heap, (areas[i], i))
+    for i in range(1, point_count - 1):
+        area = calculate_triangle_area(points[i - 1], points[i], points[i + 1])
+        heapq.heappush(heap, (area, i))
 
-    while heap:
-        area, idx = heapq.heappop(heap)
-        if not mask[idx]:
-            continue
-        if area >= epsilon:
-            break
-        mask[idx] = False
+    results = {}
+    for threshold in sorted(set(thresholds)):
+        while remaining_count > 2 and heap:
+            area, idx = heapq.heappop(heap)
+            if not mask[idx]:
+                continue
+            if area >= threshold:
+                # Resume from this item when processing the next threshold.
+                heapq.heappush(heap, (area, idx))
+                break
 
-        # Update neighbors
-        i_prev = prev[idx]
-        i_next = next[idx]
-        if i_prev != -1 and i_next != -1:
-            areas[idx] = np.inf
-            areas[i_prev] = (
-                calculate_triangle_area(
-                    points[prev[i_prev]], points[i_prev], points[i_next]
+            mask[idx] = False
+            remaining_count -= 1
+            previous_idx = prev[idx]
+            next_idx = next[idx]
+            if previous_idx != -1 and next_idx != -1:
+                previous_area = (
+                    calculate_triangle_area(
+                        points[prev[previous_idx]],
+                        points[previous_idx],
+                        points[next_idx],
+                    )
+                    if prev[previous_idx] != -1
+                    else np.inf
                 )
-                if prev[i_prev] != -1
-                else np.inf
-            )
-            areas[i_next] = (
-                calculate_triangle_area(
-                    points[i_prev], points[i_next], points[next[i_next]]
+                next_area = (
+                    calculate_triangle_area(
+                        points[previous_idx], points[next_idx], points[next[next_idx]]
+                    )
+                    if next[next_idx] != -1
+                    else np.inf
                 )
-                if next[i_next] != -1
-                else np.inf
-            )
-            heapq.heappush(heap, (areas[i_prev], i_prev))
-            heapq.heappush(heap, (areas[i_next], i_next))
-            next[i_prev] = i_next
-            prev[i_next] = i_prev
-        elif i_prev != -1:
-            next[i_prev] = i_next
-        elif i_next != -1:
-            prev[i_next] = i_prev
+                heapq.heappush(heap, (previous_area, previous_idx))
+                heapq.heappush(heap, (next_area, next_idx))
+                next[previous_idx] = next_idx
+                prev[next_idx] = previous_idx
+            elif previous_idx != -1:
+                next[previous_idx] = next_idx
+            elif next_idx != -1:
+                prev[next_idx] = previous_idx
 
-        # Early exit if only two points remain
-        if np.count_nonzero(mask) <= 2:
-            break
+        results[threshold] = np.flatnonzero(mask)
 
-    return points[mask]
+    return [results[threshold] for threshold in thresholds]
+
+
+def visvalingam_whyatt_3d(
+    points: np.ndarray, epsilon=0.51, return_indices=False
+) -> np.ndarray:
+    """Simplify an ordered 3D polyline with the Visvalingam-Whyatt algorithm."""
+    if len(points) <= 2:
+        return np.arange(len(points)) if return_indices else points
+
+    indices = _indices_at_thresholds(points, [epsilon])[0]
+    return indices if return_indices else points[indices]
+
+
+def visvalingam_whyatt_3d_many(points, epsilons, return_indices=False):
+    """Simplify once and return results for multiple area thresholds."""
+    thresholds = list(epsilons)
+    if not thresholds:
+        return []
+    if len(points) <= 2:
+        result = np.arange(len(points)) if return_indices else points
+        return [result.copy() for _ in thresholds]
+
+    index_sets = _indices_at_thresholds(points, thresholds)
+    if return_indices:
+        return index_sets
+    return [points[indices] for indices in index_sets]

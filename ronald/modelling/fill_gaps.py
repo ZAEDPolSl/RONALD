@@ -3,7 +3,7 @@ from scipy.spatial import ConvexHull, Delaunay
 from skimage.draw import line_nd, polygon
 
 
-def fill_gaps(upper_ellipse, lower_ellipse, smooth_tree_mask):
+def fill_gaps(upper_ellipse, lower_ellipse, smooth_tree_mask, cast_to_int=True):
     upper_unique = np.unique(upper_ellipse, axis=0)
     lower_unique = np.unique(lower_ellipse, axis=0)
 
@@ -14,26 +14,22 @@ def fill_gaps(upper_ellipse, lower_ellipse, smooth_tree_mask):
     n_points = all_points.shape[0]
 
     if n_points == 0:
-        return smooth_tree_mask.astype(int)
-    elif n_points == 1:
-        mask = np.zeros_like(smooth_tree_mask, dtype=bool)
-        mask[tuple(all_points[0])] = True
-        np.logical_or(smooth_tree_mask, mask, out=smooth_tree_mask)
-        return smooth_tree_mask.astype(int)
+        return smooth_tree_mask.astype(int) if cast_to_int else smooth_tree_mask
+    if n_points == 1:
+        smooth_tree_mask[tuple(all_points[0])] = True
+        return smooth_tree_mask.astype(int) if cast_to_int else smooth_tree_mask
 
     centered = all_points - all_points.mean(axis=0)
     rank = np.linalg.matrix_rank(centered, tol=1e-5)
 
-    mask = np.zeros_like(smooth_tree_mask, dtype=bool)
-    if rank == 1 or n_points <= 2:
-        mask = fill_line_3d(all_points, mask)
+    if n_points <= 2 or rank == 1:
+        fill_line_3d(all_points, smooth_tree_mask)
     elif rank == 2 or n_points == 3:
-        mask = fill_plane_3d(all_points, mask, all_points)
+        fill_plane_3d(all_points, smooth_tree_mask, all_points)
     else:
-        mask = fill_volume_3d(all_points, mask)
+        fill_volume_3d(all_points, smooth_tree_mask)
 
-    np.logical_or(smooth_tree_mask, mask, out=smooth_tree_mask)
-    return smooth_tree_mask.astype(int)
+    return smooth_tree_mask.astype(int) if cast_to_int else smooth_tree_mask
 
 
 def fill_line_3d(points, mask):
@@ -63,9 +59,9 @@ def fill_plane_3d(points, mask, all_points):
     rank_2d = np.linalg.matrix_rank(points_2d - points_2d.mean(axis=0), tol=1e-5)
 
     if rank_2d == 1:
-        mask = fill_line_2d(points_2d, mask, drop_axis, axes_2d)
+        fill_line_2d(points_2d, mask, drop_axis, axes_2d)
     else:
-        mask = fill_polygon_2d(points_2d, mask, drop_axis, axes_2d, all_points)
+        fill_polygon_2d(points_2d, mask, drop_axis, axes_2d, all_points)
     return mask
 
 
@@ -230,8 +226,12 @@ def fill_volume_3d(points, mask):
         return mask
 
     try:
-        # Use Delaunay triangulation with QJ option for robustness
-        delaunay = Delaunay(points, qhull_options="QJ")
+        # Only hull vertices can affect the filled volume. Triangulating the
+        # thousands of interior ellipse samples is substantially more expensive
+        # and produces the same convex region.
+        hull = ConvexHull(points, qhull_options="QJ")
+        hull_points = points[hull.vertices]
+        delaunay = Delaunay(hull_points, qhull_options="QJ")
 
         # Process the grid in chunks to save memory
         chunk_size = 100  # Process this many slices at a time
@@ -259,7 +259,7 @@ def fill_volume_3d(points, mask):
             # Free memory
             z, y, x, grid_points, mask_flat = None, None, None, None, None
 
-    except Exception as e:
+    except Exception:
         # Fallback: just mark the points
         for p in points:
             idx = tuple(np.round(p).astype(int))

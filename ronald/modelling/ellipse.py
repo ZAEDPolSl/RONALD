@@ -1,7 +1,6 @@
 import numpy as np
 from scipy.spatial import ConvexHull
 from skimage.measure import CircleModel, EllipseModel
-from sklearn.decomposition import PCA
 
 
 def are_points_symmetric(points, tol=1e-10):

@@ -14,8 +14,8 @@ def neighbors(shape):
     return np.dot(idx, acc[::-1])
 
 
-@jit(nopython=True)  # my mark
-def mark(img, nbs):  # mark the array use (0, 1, 2)
+@jit(nopython=True, cache=True)
+def mark(img, nbs):
     img = img.ravel()
     for p in range(len(img)):
         if img[p] == 0:
@@ -30,7 +30,7 @@ def mark(img, nbs):  # mark the array use (0, 1, 2)
             img[p] = 2
 
 
-@jit(nopython=True)  # trans index to r, c...
+@jit(nopython=True, cache=True)
 def idx2rc(idx, acc):
     rst = np.zeros((len(idx), len(acc)), dtype=np.int16)
     for i in range(len(idx)):
@@ -41,7 +41,7 @@ def idx2rc(idx, acc):
     return rst
 
 
-@jit(nopython=True)  # fill a node (may be two or more points)
+@jit(nopython=True, cache=True)
 def fill(img, p, num, nbs, acc, buf):
     img[p] = num
     buf[0] = p
@@ -65,9 +65,7 @@ def fill(img, p, num, nbs, acc, buf):
     return iso, idx2rc(buf[:s], acc)
 
 
-@jit(
-    nopython=True
-)  # trace the edge and use a buffer, then buf.copy, if use [] numba not works
+@jit(nopython=True, cache=True)
 def trace(img, p, nbs, acc, buf):
     c1 = 0
     c2 = 0
@@ -94,10 +92,13 @@ def trace(img, p, nbs, acc, buf):
     return (c1 - 10, c2 - 10, idx2rc(buf[: cur + 1], acc))
 
 
-@jit(nopython=True)  # parse the image then get the nodes and edges
+@jit(nopython=True, cache=True)
 def parse_struc(img, nbs, acc, iso, ring):
     img = img.ravel()
-    buf = np.zeros(1310722, dtype=np.int64)
+    # A traced node or edge cannot contain more entries than the complete
+    # foreground. Right-sizing this buffer avoids a fixed 10 MiB allocation
+    # for small trees and removes the old 1,310,722-point upper limit.
+    buf = np.zeros(max(np.count_nonzero(img), 1), dtype=np.int64)
     num = 10
     nodes = []
     for p in range(len(img)):
@@ -130,7 +131,6 @@ def parse_struc(img, nbs, acc, iso, ring):
     return nodes, edges
 
 
-# use nodes and edges build a networkx graph
 def build_graph(nodes, edges, multi=False, full=True):
     os = np.array([i.mean(axis=0) for i in nodes])
     if full:
@@ -146,8 +146,15 @@ def build_graph(nodes, edges, multi=False, full=True):
     return graph
 
 
+def _pad_uint16(image):
+    """Pad directly into the dtype needed by graph tracing."""
+    padded = np.zeros(tuple(size + 2 for size in image.shape), dtype=np.uint16)
+    padded[(slice(1, -1),) * image.ndim] = image
+    return padded
+
+
 def mark_node(ske):
-    buf = np.pad(ske, (1, 1), mode="constant").astype(np.uint16)
+    buf = _pad_uint16(ske)
     nbs = neighbors(buf.shape)
     acc = np.cumprod((1,) + buf.shape[::-1][:-1])[::-1]
     mark(buf, nbs)
@@ -155,7 +162,7 @@ def mark_node(ske):
 
 
 def build_sknw(ske, multi=False, iso=True, ring=True, full=True):
-    buf = np.pad(ske, (1, 1), mode="constant").astype(np.uint16)
+    buf = _pad_uint16(ske)
     nbs = neighbors(buf.shape)
     acc = np.cumprod((1,) + buf.shape[::-1][:-1])[::-1]
     mark(buf, nbs)

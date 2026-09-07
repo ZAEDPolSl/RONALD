@@ -1,11 +1,14 @@
 import numpy as np
-from sklearn.decomposition import PCA
 
 from ronald.modelling.cone_construction import is_point_in_cylinder
 from ronald.modelling.densify import densify_point_cloud
-from ronald.modelling.ellipse import find_ellipse as f_el, check_ellipse
+from ronald.modelling.ellipse import check_ellipse, find_ellipse
 from ronald.modelling.fill_gaps import fill_gaps
+from ronald.modelling.principal_axes import PrincipalAxes3D
 from ronald.modelling.segment_branch import segment_branch
+
+DENSIFICATION_FACTOR = 100
+TRANSFORM_CHUNK_SIZE = 65_536
 
 
 class BranchAnalyser:
@@ -13,7 +16,7 @@ class BranchAnalyser:
         self.eps = eps
         self.segments = segments
         self.verbose = verbose
-        self.svd = None
+        self.principal_axes = None
         self.indices_options = []
         self.points = None
         self.transformed_points = None
@@ -24,24 +27,36 @@ class BranchAnalyser:
         self.second_base = None
 
     def between_endpoints(self, points, c1, c2):
+        return points[self.between_endpoints_mask(points, c1, c2)]
+
+    def between_endpoints_mask(self, points, c1, c2, chunk_size=65_536):
         axis_vector = c2 - c1
         height = np.linalg.norm(axis_vector)
         axis_unit_vector = axis_vector / (height + self.eps)
-        vector_to_points = points - c1
-        projection_lengths = np.dot(vector_to_points, axis_unit_vector)
-        height_bounds_check = (0 <= projection_lengths) & (projection_lengths <= height)
-        return points[height_bounds_check]
+        selected = np.empty(len(points), dtype=bool)
+        for start in range(0, len(points), chunk_size):
+            stop = min(start + chunk_size, len(points))
+            vector_to_points = points[start:stop] - c1
+            projection_lengths = np.dot(vector_to_points, axis_unit_vector)
+            selected[start:stop] = (0 <= projection_lengths) & (
+                projection_lengths <= height
+            )
+        return selected
 
-    def prepare_branch_svd(self, points):
+    def prepare_principal_axes(self, points):
         if self.verbose:
-            print("  Preparing branch SVD...")
-        branch_points = densify_point_cloud(points, factor=100)
-        self.svd = PCA(n_components=3)
-        self.svd.fit(branch_points)
-        self.densified_transformed = self.svd.transform(branch_points)
-        self.transformed_points = self.svd.transform(points)
+            print("  Preparing branch PCA...")
+        branch_points = densify_point_cloud(points, factor=DENSIFICATION_FACTOR)
+        self.principal_axes = PrincipalAxes3D().fit(branch_points)
+        for start in range(0, len(branch_points), TRANSFORM_CHUNK_SIZE):
+            stop = min(start + TRANSFORM_CHUNK_SIZE, len(branch_points))
+            branch_points[start:stop] = self.principal_axes.transform(
+                branch_points[start:stop]
+            )
+        self.densified_transformed = branch_points
+        self.transformed_points = self.principal_axes.transform(points)
         if self.verbose:
-            print(f"  SVD prepared: {len(points)} points transformed")
+            print(f"  PCA prepared: {len(points)} points transformed")
 
     def separate_branch(self, transformed_endpoints):
         transformed_points = self.densified_transformed
@@ -49,22 +64,31 @@ class BranchAnalyser:
             print("  Separating branch at endpoints...")
 
         if self.segments:
-            transformed_points = self.between_endpoints(
+            between_mask = self.between_endpoints_mask(
                 transformed_points,
                 transformed_endpoints[0, :],
                 transformed_endpoints[1, :],
             )
             if self.verbose:
                 print(
-                    f"  Filtered to {len(transformed_points)} points between endpoints"
+                    f"  Filtered to {np.count_nonzero(between_mask)} points between endpoints"
                 )
+        else:
+            between_mask = np.ones(len(transformed_points), dtype=bool)
 
         first_val = transformed_endpoints[0, 0]
         second_val = transformed_endpoints[1, 0]
-        tol = (transformed_points[:, 0].max() - transformed_points[:, 0].min()) / 100
+        first_axis = transformed_points[:, 0]
+        first_axis_min = np.min(first_axis, where=between_mask, initial=np.inf)
+        first_axis_max = np.max(first_axis, where=between_mask, initial=-np.inf)
+        tol = (first_axis_max - first_axis_min) / 100
 
-        mask_first = np.isclose(transformed_points[:, 0], first_val, atol=tol)
-        mask_second = np.isclose(transformed_points[:, 0], second_val, atol=tol)
+        mask_first = between_mask & np.isclose(
+            transformed_points[:, 0], first_val, atol=tol
+        )
+        mask_second = between_mask & np.isclose(
+            transformed_points[:, 0], second_val, atol=tol
+        )
 
         points_first = transformed_points[mask_first]
         points_second = transformed_points[mask_second]
@@ -74,8 +98,8 @@ class BranchAnalyser:
                 f"  First base: {len(points_first)} points, Second base: {len(points_second)} points"
             )
 
-        ellipse1 = f_el(points_first, transformed_endpoints[0, :])
-        ellipse2 = f_el(points_second, transformed_endpoints[1, :])
+        ellipse1 = find_ellipse(points_first, transformed_endpoints[0, :])
+        ellipse2 = find_ellipse(points_second, transformed_endpoints[1, :])
 
         return [ellipse1, ellipse2], [points_first, points_second]
 
@@ -97,9 +121,8 @@ class BranchAnalyser:
 
         return ellipse
 
-    def add_ellipse_points(self, cyl_mask, transformed_endpoints, image):
-        """Add original base points to cylinder mask when no cylinder points are found."""
-        # Find original points that correspond to the bases using the tolerance method
+    def ellipse_point_mask(self, transformed_endpoints):
+        """Select original base points when a segment contains no cylinder points."""
         first_val = transformed_endpoints[0, 0]
         second_val = transformed_endpoints[1, 0]
         tol = (
@@ -109,15 +132,12 @@ class BranchAnalyser:
         mask_first = np.isclose(self.transformed_points[:, 0], first_val, atol=tol)
         mask_second = np.isclose(self.transformed_points[:, 0], second_val, atol=tol)
 
-        # Get the transformed points at the base heights
         base1_transformed_points = self.transformed_points[mask_first]
         base2_transformed_points = self.transformed_points[mask_second]
 
-        # Find ellipses for the bases
-        ellipse1 = f_el(base1_transformed_points, transformed_endpoints[0, :])
-        ellipse2 = f_el(base2_transformed_points, transformed_endpoints[1, :])
+        ellipse1 = find_ellipse(base1_transformed_points, transformed_endpoints[0, :])
+        ellipse2 = find_ellipse(base2_transformed_points, transformed_endpoints[1, :])
 
-        # Check which points are actually inside each ellipse
         base1_in_ellipse = check_ellipse(
             base1_transformed_points, ellipse1[0], ellipse1[1], ellipse1[2], self.eps
         )
@@ -125,25 +145,12 @@ class BranchAnalyser:
             base2_transformed_points, ellipse2[0], ellipse2[1], ellipse2[2], self.eps
         )
 
-        # Get the original points that are inside the ellipses
-        base1_original_points = self.points[mask_first][base1_in_ellipse]
-        base2_original_points = self.points[mask_second][base2_in_ellipse]
-
-        # Add ellipse points to mask
-        if len(base1_original_points) > 0:
-            cyl_mask[
-                base1_original_points[:, 0],
-                base1_original_points[:, 1],
-                base1_original_points[:, 2],
-            ] = 1
-        if len(base2_original_points) > 0:
-            cyl_mask[
-                base2_original_points[:, 0],
-                base2_original_points[:, 1],
-                base2_original_points[:, 2],
-            ] = 1
-
-        return cyl_mask
+        selected = np.zeros(len(self.points), dtype=bool)
+        if np.any(base1_in_ellipse):
+            selected[np.flatnonzero(mask_first)[base1_in_ellipse]] = True
+        if np.any(base2_in_ellipse):
+            selected[np.flatnonzero(mask_second)[base2_in_ellipse]] = True
+        return selected
 
     def analyse_segment(self, ellipses):
         ellipse1, ellipse2 = ellipses
@@ -160,13 +167,17 @@ class BranchAnalyser:
             ellipse2[2],
         )
 
-    def initialise(self, branch, image):
+    def initialise(self, branch, image=None, points=None):
         if self.verbose:
             print("  Initializing branch analysis...")
-        self.points = np.argwhere(image == 1)
+        if points is None:
+            if image is None:
+                raise ValueError("Either image or points must be provided")
+            points = np.argwhere(image == 1)
+        self.points = np.asarray(points)
         if self.verbose:
             print(f"  Found {len(self.points)} points in branch mask")
-        self.prepare_branch_svd(self.points)
+        self.prepare_principal_axes(self.points)
 
         if self.segments:
             if self.verbose:
@@ -179,12 +190,12 @@ class BranchAnalyser:
             if self.verbose:
                 print("  Using single segment for branch (endpoints only)")
 
-    def analyse_indices_option(self, indices, branch, image):
+    def analyse_indices_option(self, indices, branch):
         if self.verbose:
             print(f"  Analyzing branch option with {len(indices)} segments...")
 
-        smooth_cylinder = np.zeros(image.shape, dtype=int)
-        ellipse_pairs = []
+        smooth_cylinder = np.zeros(len(self.points), dtype=bool)
+        gaps = []
 
         for i in range(len(indices) - 1):
             if self.verbose and len(indices) > 2:
@@ -198,36 +209,30 @@ class BranchAnalyser:
             else:
                 start_idx, end_idx = indices[i] + 1, indices[i + 1] - 1
 
-            transformed_endpoints = self.svd.transform(
+            transformed_endpoints = self.principal_axes.transform(
                 np.array([branch[start_idx], branch[end_idx]])
             )
             ellipses, ellipse_points = self.separate_branch(transformed_endpoints)
             if i > 0:
-                # Transform back to original space for gap filling
-                prev_lower = self.svd.inverse_transform(prev_upper)
-                curr_upper = self.svd.inverse_transform(ellipse_points[0])
-                ellipse_pairs.append((prev_lower, curr_upper))
+                prev_lower = self.principal_axes.inverse_transform(prev_upper)
+                curr_upper = self.principal_axes.inverse_transform(ellipse_points[0])
+                gaps.append((prev_lower, curr_upper))
 
-            inside_cylinder = self.analyse_segment(ellipses)
-            cyl = self.points[inside_cylinder]
-            cyl_mask = np.zeros(image.shape, dtype=int)
-            cyl_mask[cyl[:, 0], cyl[:, 1], cyl[:, 2]] = 1
+            cylinder_mask = self.analyse_segment(ellipses)
 
-            # If no cylinder points found, add the actual original base points directly
-            if np.sum(cyl_mask) == 0:
-                cyl_mask = self.add_ellipse_points(
-                    cyl_mask, transformed_endpoints, image
-                )
-                base_points_added = np.sum(cyl_mask)
+            if not np.any(cylinder_mask):
+                cylinder_mask = self.ellipse_point_mask(transformed_endpoints)
+                base_points_added = np.count_nonzero(cylinder_mask)
                 if self.verbose:
                     print(
-                        f"    Segment {i+1}: No cylinder points found, added {base_points_added} base points instead"
+                        f"    Segment {i+1}: no cylinder points; "
+                        f"added {base_points_added} base points"
                     )
 
-            np.logical_or(smooth_cylinder, cyl_mask, out=smooth_cylinder)
+            np.logical_or(smooth_cylinder, cylinder_mask, out=smooth_cylinder)
 
             if self.verbose:
-                total_added = np.sum(cyl_mask)
+                total_added = np.count_nonzero(cylinder_mask)
                 print(f"    Segment {i+1}: Added {total_added} points to cylinder")
 
             prev_upper = ellipse_points[1]
@@ -243,39 +248,43 @@ class BranchAnalyser:
 
         if self.verbose:
             print(
-                f"  Branch thickness: {thickness:.2f}, total points: {np.sum(smooth_cylinder)}"
+                f"  Branch thickness: {thickness:.2f}, total points: {np.count_nonzero(smooth_cylinder)}"
             )
 
         return (
             smooth_cylinder,
             [on_first_base, on_second_base],
-            ellipse_pairs,
+            gaps,
             thickness,
         )
 
-    def smooth_branch(self, branch, image):
+    def smooth_branch_points(self, branch, points):
+        """Model a branch using coordinates only, without full-volume temporaries."""
         if self.verbose:
             print("  Starting branch smoothing...")
 
-        self.initialise(branch, image)
+        self.initialise(branch, points=points)
         best_score = -1
-        self.best_cylinder = np.ones(image.shape, dtype=int) * (-1)
+        self.best_cylinder = np.zeros(len(self.points), dtype=bool)
         self.aggregated_gaps = []
 
-        no_improve_count = 0  # Counter for consecutive non-improving iterations
+        no_improve_count = 0
 
-        for idx, indices in enumerate(self.indices_options):
+        for option_index, indices in enumerate(self.indices_options):
             if self.verbose:
-                print(f"  Trying branch option {idx+1}/{len(self.indices_options)}...")
+                print(
+                    f"  Trying branch option {option_index + 1}/"
+                    f"{len(self.indices_options)}..."
+                )
 
             smooth_cylinder, bases, gaps, thickness = self.analyse_indices_option(
-                indices, branch, image
+                indices, branch
             )
             first_base, second_base = bases
-            score = np.sum(smooth_cylinder)
+            score = np.count_nonzero(smooth_cylinder)
 
             if self.verbose:
-                print(f"  Option {idx+1} score: {score} points")
+                print(f"  Option {option_index + 1} score: {score} points")
 
             if score > best_score:
                 if self.verbose:
@@ -284,9 +293,8 @@ class BranchAnalyser:
                     )
                 best_score = score
                 self.best_cylinder = smooth_cylinder
-                # Transform bases back to original coordinate space
-                self.first_base = self.svd.inverse_transform(first_base)
-                self.second_base = self.svd.inverse_transform(second_base)
+                self.first_base = self.principal_axes.inverse_transform(first_base)
+                self.second_base = self.principal_axes.inverse_transform(second_base)
                 self.aggregated_gaps = gaps
                 self.thickness = thickness
                 no_improve_count = 0
@@ -303,21 +311,28 @@ class BranchAnalyser:
                         )
                     break
 
-        # Only fill gaps once using saved best-cylinder's ellipse pairs
-        if self.verbose and self.aggregated_gaps:
-            print(f"  Filling {len(self.aggregated_gaps)} gaps between segments...")
-
-        for lower, upper in self.aggregated_gaps:
-            self.best_cylinder = fill_gaps(lower, upper, self.best_cylinder)
-
         if self.verbose:
             print(
-                f"  Branch smoothing complete: {np.sum(self.best_cylinder)} points in final model"
+                f"  Branch smoothing complete: {np.count_nonzero(self.best_cylinder)} points before gap filling"
             )
 
         return (
-            self.best_cylinder.astype(int),
+            self.points[self.best_cylinder],
             self.first_base,
             self.second_base,
             self.thickness,
+            self.aggregated_gaps,
         )
+
+    def smooth_branch(self, branch, image):
+        """Backward-compatible full-volume wrapper around coordinate processing."""
+        selected_points, first_base, second_base, thickness, gaps = (
+            self.smooth_branch_points(branch, np.argwhere(image == 1))
+        )
+        best_cylinder = np.zeros(image.shape, dtype=bool)
+        if len(selected_points):
+            best_cylinder[tuple(selected_points.T)] = True
+        for lower, upper in gaps:
+            fill_gaps(lower, upper, best_cylinder, cast_to_int=False)
+        self.best_cylinder = best_cylinder.astype(int)
+        return self.best_cylinder, first_base, second_base, thickness
