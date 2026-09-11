@@ -107,19 +107,26 @@ def fit_ellipse_3d(
         hull = points_2d
         circle_check = hull.shape[0] < 5
 
+    if hull.shape[0] == 0:
+        return center_point[1], center_point[2], center_point[0], 1e-10, 1e-10, 0
+
+    if hull.shape[0] == 1:
+        xc, yc = hull[0]
+        return xc, yc, center_point[0], 1e-10, 1e-10, 0
+
     # Fit ellipse in 2D using skimage
     if not circle_check:
         ellipse = EllipseModel()
         hull_centered = hull - hull.mean(axis=0)
         try:
-            success = ellipse.estimate(hull)
-            if success and ellipse.params is not None:
+            success = ellipse.estimate(hull_centered)
+            if success and ellipse.params is not None and len(ellipse.params) == 5:
                 xc, yc, a, b, theta = ellipse.params
                 xc += hull.mean(axis=0)[0]
                 yc += hull.mean(axis=0)[1]
             else:
                 circle_check = True
-        except TypeError:
+        except (TypeError, ValueError, RuntimeWarning):
             circle_check = True
 
     if circle_check:
@@ -131,14 +138,25 @@ def fit_ellipse_3d(
         if hull.shape[0] >= 3:
             try:
                 circle = CircleModel()
-                success = circle.estimate(hull)
+                hull_centered = hull - hull.mean(axis=0)
+                success = circle.estimate(hull_centered)
                 if success and circle.params is not None:
-                    xc, yc, r = circle.params
+                    if len(circle.params) == 3:
+                        xc, yc, r = circle.params
+                    elif len(circle.params) == 2:
+                        center, r = circle.params
+                        xc, yc = center
+                    else:
+                        raise ValueError(
+                            f"Unexpected CircleModel params: {circle.params!r}"
+                        )
+                    xc += hull.mean(axis=0)[0]
+                    yc += hull.mean(axis=0)[1]
                     a = b = r
                 else:
                     r = np.linalg.norm(hull[0] - hull[1]) / 2
                     a = b = r
-            except TypeError:
+            except (TypeError, ValueError, RuntimeWarning):
                 r = np.linalg.norm(hull[0] - hull[1]) / 2
                 a = b = r
         elif hull.shape[0] == 2:
