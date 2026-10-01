@@ -1,7 +1,7 @@
 import numpy as np
 import SimpleITK as sitk
 
-from ctools import nifti_to_sitk, sitk_to_nifti
+from ctools.external.sitk2nibabel import nifti_to_sitk, sitk_to_nifti
 
 
 def get_total_roi_labels(roi_names):

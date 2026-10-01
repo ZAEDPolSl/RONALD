@@ -1,4 +1,5 @@
 import os
+import warnings
 import numpy as np
 import pandas as pd
 import SimpleITK as sitk
@@ -7,27 +8,43 @@ from ronald.utils import solve, get_gmm_metadata
 
 
 def get_thresholds(gmm_list, max_value):
+    """Separate adjacent, mean-sorted Gaussians at their in-between crossing.
 
+    Keep the existing unweighted density intersection. ``max_value`` remains
+    accepted for caller compatibility, but an unrelated CT maximum must not
+    decide which quadratic root separates two components. If their densities
+    do not cross between the means, use the midpoint and report that fallback.
+    """
     thresholds = []
-
-    for i in range(len(gmm_list) - 1):
-        current_gauss_dict = gmm_list[i]
-        next_gauss_dict = gmm_list[i + 1]
-
-        threshold_candidates = solve(
-            current_gauss_dict["mean"],
-            next_gauss_dict["mean"],
-            current_gauss_dict["std"],
-            next_gauss_dict["std"],
-        )
-
-        if max(threshold_candidates) < max_value:
-            threshold = max(threshold_candidates)
+    for left, right in zip(gmm_list[:-1], gmm_list[1:]):
+        low, high = float(left["mean"]), float(right["mean"])
+        std_left, std_right = float(left["std"]), float(right["std"])
+        if not np.isfinite([low, high, std_left, std_right]).all():
+            raise ValueError("Gaussian means and standard deviations must be finite")
+        if std_left <= 0 or std_right <= 0:
+            raise ValueError("Gaussian standard deviations must be positive")
+        if low > high:
+            raise ValueError("Gaussian components must be sorted by increasing mean")
+        midpoint = low + (high - low) / 2
+        # Work in a translated/scaled coordinate system to avoid cancellation
+        # for close means with large offsets. The roots are converted back to HU.
+        scale = max(high - low, std_left, std_right)
+        roots = solve(0.0, (high - low) / scale,
+                      std_left / scale, std_right / scale)
+        candidates = [low + scale * float(root.real) for root in roots
+                      if np.isreal(root) and np.isfinite(root)]
+        between = [value for value in candidates if low <= value <= high]
+        if between:
+            threshold = min(between, key=lambda value: abs(value - midpoint))
         else:
-            threshold = min(threshold_candidates)
-
-        thresholds.append(threshold)
-
+            threshold = midpoint
+            warnings.warn(
+                f"Gaussian densities have no crossing between means {low:g} and "
+                f"{high:g}; using midpoint {midpoint:g}.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        thresholds.append(float(threshold))
     return thresholds
 
 
@@ -61,7 +78,14 @@ def run_thresholding(
     path_cache=None,
     number_of_gmms=3,
     return_thresholds=True,
+    *,
+    create_segments=True,
 ):
+    """Fit CT intensity thresholds and optionally create their labelled volume.
+
+    Threshold-only callers can disable ``create_segments`` to avoid allocating
+    a full output volume. The returned segment image is then ``None``.
+    """
     # segment the lung area
     if sitk_mask is not None:
         # get min
@@ -71,32 +95,15 @@ def run_thresholding(
         # get lungs image
         sitk_image = sitk.Mask(sitk_image, sitk_mask, outsideValue=_min - 1)
     image = sitk.GetArrayFromImage(sitk_image)
-    # image = np.swapaxes(image, 0, 2)
+    # Preserve C-order samples and the original exclusion rules, without
+    # copying the whole volume repeatedly before fitting.
+    flat = image.ravel()
+    background_val = flat.min()
+    X = flat[(flat != background_val) & ~(flat > 500)][:, np.newaxis]
 
-    nrrd_volume_seg_sq = image.copy()
-
-    X = nrrd_volume_seg_sq.copy()
-    X = X.flatten()
-
-    # Remove Background Intensities Outside Patient
-    background_val = X.min()
-    background_idx = np.where(X == background_val)
-    X = np.delete(X, background_idx)
-
-    background_idx = np.where(X > 500)
-    X = np.delete(X, background_idx)
-    X = X[:, np.newaxis]
-    # print("Generating Distplot...")
-    # Generate distplot
-    # sns_plot = sns.distplot(X)
-    # dist_plot_path = os.path.join(output_path, 'dist_plot.png')
-
-    # Model gmm
-    # print("Running Gaussian modelling...")
     gmm = mixture.GaussianMixture(n_components=number_of_gmms)
     gmm.fit(X)
 
-    # print("Sorting GMMs")
     gmm_list = get_gmm_metadata(gmm)
     thresholds = get_thresholds(gmm_list, X.max())
     thresholds.insert(0, np.min(image) - 1)
@@ -106,11 +113,11 @@ def run_thresholding(
     if path_cache is not None:
         thresholds_df.to_csv(os.path.join(path_cache, "thresholds.csv"), index=False)
 
-    # print("Generating thresholded volumes...")
-    segments = create_thresholded_volumes(thresholds, image)
-    # segments = np.swapaxes(segments, 0, 2)
-    sitk_segments = sitk.GetImageFromArray(segments)
-    sitk_segments.CopyInformation(sitk_image)
+    sitk_segments = None
+    if create_segments:
+        segments = create_thresholded_volumes(thresholds, image)
+        sitk_segments = sitk.GetImageFromArray(segments)
+        sitk_segments.CopyInformation(sitk_image)
     if return_thresholds:
         return sitk_segments, thresholds
     else:

@@ -1,6 +1,6 @@
 # RONALD
-This repository contains a Python 3.8 implementation of an airways and vessels segmentation algorithm for CT thorax images. 
-The algorithm utilizes the Fast Marching method, guided by two velocity maps: one based on image gradient and 
+This repository contains a Python 3.10+ implementation of an airways and vessels segmentation algorithm for CT thorax images.
+The algorithm utilizes the Fast Marching method, guided by two velocity maps: one based on image gradient and
 the other on vesselness filtering. This combination enhances the accuracy and reliability of airway segmentation,
 making it suitable for medical imaging and research purposes.
 Features:
@@ -66,6 +66,13 @@ python examples/01_segmentation.py
 
 Example usage can be found in `examples/whole_pipeline.py`, note that depending on your IDE configuration supplied
 in the example path strings may not be correct, adjust for personal usage.
+
+## Airway tree smoothing
+
+The current tree model calculates Sato internally from `walls_filled`, follows
+its skeleton with elliptical tubes, expands into supported walls, and restores
+connected Sato before the final connectivity check. See [the smoothing pipeline](docs/smoothing.md)
+for usage, algorithms, diagnostics, and validation.
 
 ## Citation
 

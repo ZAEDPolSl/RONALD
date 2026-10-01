@@ -10,7 +10,7 @@ import SimpleITK as sitk
 import numpy as np
 import scipy.ndimage as ndi
 import kimimaro
-from ronald.modelling.prepare_graph import keep_largest_component
+from ronald.modelling.prepare_graph import keep_largest_component, clean_airways_graph
 
 
 def _kimimaro_to_graph_structure(skeleton):
@@ -65,7 +65,7 @@ def _interpolate_3d_path(p1, p2, num_points=None):
     return points
 
 
-def _preprocess_for_kimimaro(mask):
+def _preprocess_for_kimimaro(mask, *, keep_all_components=False):
     """Gentle preprocessing to prepare mask for kimimaro skeletonization."""
     if isinstance(mask, sitk.Image):
         mask_array = sitk.GetArrayFromImage(mask)
@@ -85,7 +85,7 @@ def _preprocess_for_kimimaro(mask):
 
     # Remove very small isolated components only
     labeled, num_features = ndi.label(binary_mask)
-    if num_features > 1:
+    if num_features > 1 and not keep_all_components:
         sizes = ndi.sum(binary_mask, labeled, range(num_features + 1))
         mask_size = sizes > 50  # Keep components larger than 50 voxels
         remove_pixel = mask_size[labeled]
@@ -94,7 +94,9 @@ def _preprocess_for_kimimaro(mask):
     return binary_mask
 
 
-def prepare_graph_kimimaro(mask, aggressive=True, teasar_params=None):
+def prepare_graph_kimimaro(
+    mask, aggressive=True, teasar_params=None, *, keep_all_components=False
+):
     """
     Create a graph from a mask using kimimaro skeletonization.
 
@@ -115,7 +117,9 @@ def prepare_graph_kimimaro(mask, aggressive=True, teasar_params=None):
         Graph with nodes having 'pts' and 'o' attributes, compatible with prepare_graph
     """
     # Preprocess the mask
-    binary_mask = _preprocess_for_kimimaro(mask)
+    binary_mask = _preprocess_for_kimimaro(
+        mask, keep_all_components=keep_all_components
+    )
 
     # Allow direct override of teasar_params for parameter sweeps
     if teasar_params is not None:
@@ -124,7 +128,7 @@ def prepare_graph_kimimaro(mask, aggressive=True, teasar_params=None):
             binary_mask,
             teasar_params=teasar_params,
             object_ids=[1],
-            dust_threshold=dust_threshold,
+            dust_threshold=0 if keep_all_components else dust_threshold,
             anisotropy=(1, 1, 1),
             fix_branching=True,
             fix_borders=True,
@@ -163,7 +167,7 @@ def prepare_graph_kimimaro(mask, aggressive=True, teasar_params=None):
             binary_mask,
             teasar_params=teasar_params,
             object_ids=[1],
-            dust_threshold=dust_threshold,
+            dust_threshold=0 if keep_all_components else dust_threshold,
             anisotropy=(1, 1, 1),
             fix_branching=True,
             fix_borders=True,
@@ -193,7 +197,7 @@ def prepare_graph_kimimaro(mask, aggressive=True, teasar_params=None):
                 "max_paths": 500,  # Maximum paths
             },
             object_ids=[1],
-            dust_threshold=10,  # Keep almost everything
+            dust_threshold=0 if keep_all_components else 10,  # Keep almost everything
             anisotropy=(1, 1, 1),
             fix_branching=True,
             fix_borders=True,
@@ -201,7 +205,7 @@ def prepare_graph_kimimaro(mask, aggressive=True, teasar_params=None):
         )
 
     # Keep only the largest skeleton if multiple are found
-    if len(skeleton) > 1:
+    if len(skeleton) > 1 and not keep_all_components:
         largest_skel_id = max(skeleton.keys(), key=lambda k: len(skeleton[k].vertices))
         skeleton = {largest_skel_id: skeleton[largest_skel_id]}
 
@@ -210,6 +214,10 @@ def prepare_graph_kimimaro(mask, aggressive=True, teasar_params=None):
 
     # Keep only the largest connected component (like prepare_graph does)
     if graph.number_of_nodes() > 0:
-        graph = keep_largest_component(graph)
+        graph = (
+            clean_airways_graph(graph, keep_all_components=True)
+            if keep_all_components
+            else keep_largest_component(graph)
+        )
 
     return graph
