@@ -73,3 +73,9 @@ The current tree model calculates Sato internally from `walls_filled`, follows
 its skeleton with elliptical tubes, expands into supported walls, and restores
 connected Sato before the final connectivity check. See [the smoothing pipeline](docs/smoothing.md)
 for usage, algorithms, diagnostics, and validation.
+
+## Citation
+
+If you use this work, please cite:
+
+> Mrukwa A, Polańska A, et al. Can Proper Vessel Segmentation Improve Early-Stage Lung Cancer Detection? Poster DATA-005, European Molecular Imaging Meeting (EMIM 2026), Ljubljana, Slovenia, 2026.
