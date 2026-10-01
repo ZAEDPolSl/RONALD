@@ -29,35 +29,6 @@ def float_ball(radius):
     return x**2 + y**2 + z**2 <= radius**2
 
 
-def _get_branch_bbox(branch_mask, padding=5):
-    """
-    Get bounding box of a branch mask with padding.
-
-    Parameters
-    ----------
-    branch_mask : ndarray
-        Binary mask of the branch
-    padding : int, default=5
-        Number of voxels to pad around the branch
-
-    Returns
-    -------
-    tuple of slices or None
-        Bounding box as slices for indexing, or None if mask is empty
-    """
-    coords = np.where(branch_mask)
-    if len(coords[0]) == 0:
-        return None
-
-    min_coords = [max(0, np.min(c) - padding) for c in coords]
-    max_coords = [
-        min(branch_mask.shape[i], np.max(coords[i]) + padding + 1)
-        for i in range(len(coords))
-    ]
-
-    return tuple(slice(min_coords[i], max_coords[i]) for i in range(len(coords)))
-
-
 def _expand_bbox(bbox, shape, padding):
     return tuple(
         slice(max(0, axis.start - padding), min(shape[i], axis.stop + padding))
@@ -111,8 +82,8 @@ def apply_smoothing_by_node_order(
     """
     Smooth branch masks using morphological closing on bounding box regions.
 
-    This memory-efficient approach processes only small regions around each branch
-    rather than the entire 3D volume, reducing memory usage by ~90%.
+    Process each branch inside its padded bounding box rather than allocating
+    a separate full-volume mask for every branch.
 
     Parameters
     ----------

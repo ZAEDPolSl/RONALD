@@ -1,5 +1,4 @@
 import os
-import SimpleITK as sitk
 from ronald.segmentation import (
     airways_segmentation,
     lungs_segmentation,
@@ -23,7 +22,7 @@ if __name__ == "__main__":
     sitk_lobes = lobes_segmentation(sitk_image)
     sitk_mediastinum = mediastinum_segmentation(sitk_lungs)
     sitk_airways, _, __, sitk_rough = airways_segmentation(sitk_image, sitk_lungs)
-    sitk_tracheobronchal = smooth_tree(sitk_rough, sitk_airways)
+    sitk_tracheobronchal = smooth_tree(sitk_rough)
     sitk_vessels = vessel_segmentation(
         sitk_image, sitk_lungs, sitk_lobes, sitk_mediastinum
     )

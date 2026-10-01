@@ -40,7 +40,7 @@ class EdgeSpatialIndex:
             for coordinate in edge:
                 self.exact_edge[tuple(coordinate)] = edge_idx
 
-    def query(self, points, tol=1e-6):
+    def query(self, points, tol=1e-6, workers=1):
         min_distances = np.full(points.shape[0], np.inf)
         min_edge_indices = np.full(points.shape[0], -1, dtype=int)
         if len(points) == 0 or self.tree is None:
@@ -91,7 +91,7 @@ class EdgeSpatialIndex:
             min_distances[query_indices] = distances
             return min_edge_indices, min_distances
 
-        distances, point_indices = self.tree.query(query_points, k=2, workers=-1)
+        distances, point_indices = self.tree.query(query_points, k=2, workers=workers)
         selected_edges = self.edge_ids[point_indices[:, 0]].copy()
         selected_distances = distances[:, 0].copy()
 
@@ -115,10 +115,10 @@ class EdgeSpatialIndex:
         return min_edge_indices, min_distances
 
 
-def closest_edge_indices(branch, edge_list, tol=1e-6, spatial_index=None):
+def closest_edge_indices(branch, edge_list, tol=1e-6, spatial_index=None, workers=1):
     if spatial_index is None:
         spatial_index = EdgeSpatialIndex(edge_list)
-    return spatial_index.query(branch, tol=tol)
+    return spatial_index.query(branch, tol=tol, workers=workers)
 
 
 def indices_of_kept_points(branch, points):
@@ -204,7 +204,7 @@ def _foreground_coordinates(image, chunk_depth=FOREGROUND_CHUNK_DEPTH):
     return np.concatenate(chunks)
 
 
-def assign_branch(image, graph, label_dtype=int):
+def assign_branch(image, graph, label_dtype=int, workers=1):
     edge_list, graph = assign_edge_number(graph)
     spatial_index = graph.graph.get("_ronald_edge_spatial_index")
     if spatial_index is None or spatial_index.edge_count != len(edge_list):
@@ -213,7 +213,7 @@ def assign_branch(image, graph, label_dtype=int):
 
     checkpoints = _foreground_coordinates(image)
     edge_indices, _ = closest_edge_indices(
-        checkpoints, edge_list, spatial_index=spatial_index
+        checkpoints, edge_list, spatial_index=spatial_index, workers=workers
     )
 
     branch_labels = np.zeros_like(image, dtype=label_dtype)

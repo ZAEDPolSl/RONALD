@@ -72,7 +72,19 @@ def make_bfs_tree(graph, root):
     return tree
 
 
-def clean_airways_graph(graph):
+def clean_airways_graph(graph, *, keep_all_components=False):
+    if graph.number_of_nodes() == 0:
+        return graph.copy()
+    if keep_all_components:
+        forest = nx.Graph()
+        forest.graph.update(graph.graph)
+        for component in nx.connected_components(graph):
+            sub = graph.subgraph(component)
+            root = max(sub.nodes(), key=lambda n: sub.nodes[n]["o"][0])
+            tree = make_bfs_tree(sub, root)
+            forest.add_nodes_from(tree.nodes(data=True))
+            forest.add_edges_from(tree.edges(data=True))
+        return forest
     graph = keep_largest_component(graph)
     root = max(graph.nodes(), key=lambda n: graph.nodes[n]["o"][0])
     graph = make_bfs_tree(graph, root)
@@ -114,10 +126,11 @@ def get_skeleton(mask):
     return graph
 
 
-def prepare_graph(mask):
-    mask = keep_largest_component_mask(mask)
+def prepare_graph(mask, *, keep_all_components=False):
+    if not keep_all_components:
+        mask = keep_largest_component_mask(mask)
     graph = get_skeleton(mask)
-    return clean_airways_graph(graph)
+    return clean_airways_graph(graph, keep_all_components=keep_all_components)
 
 
 def assign_thickness(G, node_order):
@@ -133,6 +146,9 @@ def assign_thickness(G, node_order):
             small_diameters.append(minor_len)
 
     max_diameter = max(small_diameters) if small_diameters else 1.0
+    # A fully unresolved tree has zero thickness, hence no closing expansion.
+    if max_diameter <= 0:
+        max_diameter = 1.0
 
     for u, v, data in G.edges(data=True):
         lower_node = u if node_to_order[v] < node_to_order[u] else v

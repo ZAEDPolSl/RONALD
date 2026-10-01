@@ -21,6 +21,7 @@ from ronald.processing.connected_components import (
     find_most_similar_connected_component,
 )
 from ronald.segmentation.trachea_segmentation import trachea_main_bronchus_segmentation
+from ronald.segmentation.lung_boundary import LungBoundaryGuard
 from ronald.utils import display
 
 
@@ -400,7 +401,9 @@ def airways_segmentation(
     # GMM if not supplied
     if thresholds is None:
         display("\tGMM...", verbose)
-        _, thresholds = run_thresholding(sitk_image, sitk_lungs, return_thresholds=True)
+        _, thresholds = run_thresholding(
+            sitk_image, sitk_lungs, return_thresholds=True, create_segments=False
+        )
 
     # segment trachea
     display("\tTrachea Segmentation...", verbose)
@@ -496,13 +499,21 @@ def airways_segmentation(
     sitk_airways = sitk.Cast(sitk_airways, sitk.sitkUInt8)
     sitk_vessels = sitk.Cast(sitk_vessels_rough > 0, sitk.sitkUInt8)
     sitk_airways_cleaned = remove_leaked_airways(sitk_airways, sitk_lungs, sitk_trachea)
+    # Freeze the existing lung-entry regions before any wall growth. Separate
+    # regional dilations can still touch after union; closing/filling can also
+    # bridge across the lung boundary. Reapply the SAME guard at every stage.
+    boundary_guard = LungBoundaryGuard(sitk_airways_cleaned, sitk_lungs, entry_margin=3)
+    sitk_airways_cleaned = boundary_guard.apply(sitk_airways_cleaned)
     sitk_airways_dilated = constrained_airway_dilation(
         sitk_airways_cleaned, sitk_lungs, kernel_radius=(3, 3, 3)
     )
+    sitk_airways_dilated = boundary_guard.apply(sitk_airways_dilated)
 
     sitk_walls = sitk_airways_dilated * sitk_vessels
-    sitk_walls_closed = sitk.BinaryMorphologicalClosing(sitk_walls, (3, 6, 6))
-    sitk_walls_filled = per_slice_hole_removal(sitk_walls_closed, sitk_airways)
+    sitk_walls_closed = boundary_guard.apply(
+        sitk.BinaryMorphologicalClosing(sitk_walls, (3, 6, 6))
+    )
+    sitk_walls_filled = boundary_guard.apply(per_slice_hole_removal(sitk_walls_closed))
 
     # remove walls from the filled image
     sitk_filled = sitk_walls_filled - sitk_walls
@@ -512,7 +523,7 @@ def airways_segmentation(
         image = sitk.GetArrayFromImage(sitk_filled)
         images.append(image)
 
-    sitk_airways = sitk_filled * sitk_airways
+    sitk_airways = sitk_filled * sitk_airways_cleaned
 
     # sitk_airways = sitk_airways + 2 * sitk_walls
 
