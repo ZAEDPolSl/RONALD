@@ -158,13 +158,9 @@ def calculate_sato_mask(walls_filled, *, max_workers=1):
     else:
         bbox = expand_bbox(bbox, walls.shape, padding=PADDING)
         binary = (walls[bbox] > 0).astype(np.float32)
-        response = np.zeros_like(binary)
-        for sigma in SIGMAS:
-            scale_response = _parallel_sato(
-                binary, (sigma,), max_workers=max_workers, eigen_chunk_depth=8
-            )
-            np.maximum(response, scale_response, out=response)
-            del scale_response
+        response = _parallel_sato(
+            binary, SIGMAS, max_workers=max_workers, eigen_chunk_depth=8
+        )
         if not np.isfinite(response).all():
             raise ValueError("Sato response contains nonfinite values")
         minimum = float(response.min())

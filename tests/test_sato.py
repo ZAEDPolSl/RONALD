@@ -66,11 +66,12 @@ def test_scales_max_then_normalization_once_and_only_foreground_enters_gmm(monke
         assert binary.dtype == np.float32
         np.testing.assert_array_equal(binary, data)
         # Max is deliberately outside the mask to verify normalization domain.
-        raw = np.arange(binary.size, dtype=np.float32).reshape(binary.shape) * (
-            1 + sigmas[0]
-        )
-        responses.append(raw.copy())
-        return raw
+        for sigma in sigmas:
+            raw = np.arange(binary.size, dtype=np.float32).reshape(binary.shape) * (
+                1 + sigma
+            )
+            responses.append(raw.copy())
+        return np.maximum.reduce(responses)
 
     def fit(values):
         sampled.append(values.copy())
@@ -90,7 +91,7 @@ def test_scales_max_then_normalization_once_and_only_foreground_enters_gmm(monke
         out.GetSpacing() == reference.GetSpacing()
         and out.GetOrigin() == reference.GetOrigin()
     )
-    assert [c[0][0] for c in calls] == list(mod.SIGMAS)
+    assert [c[0] for c in calls] == [mod.SIGMAS]
     assert all(c[1] == dict(max_workers=2, eigen_chunk_depth=8) for c in calls)
     assert info["padding_voxels"] == 138
 
