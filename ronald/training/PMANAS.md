@@ -46,7 +46,9 @@ In an existing checkout:
 git fetch origin
 git switch amrukwa/ronald-unet
 git pull --ff-only
+git submodule update --init --recursive
 source .venv/bin/activate
+python -m pip install -r requirements-training.txt
 ```
 
 For a new checkout, clone `--branch amrukwa/ronald-unet` and install
@@ -75,8 +77,11 @@ python -m ronald.training.prepare \
   --spacing 0.8 0.8 0.8 --margin-mm 15 --hu -1000 500 --seed 42
 ```
 
-The inventory builder reports missing files and ambiguous DICOM series in
-`inventory.audit.json`. It only includes scans with both final masks and lungs.
+The inventory builder reports missing files and scans with no discoverable DICOM series in
+`inventory.audit.json`. It only includes scans with both final masks and lungs. Nested DICOM folders are
+resolved by `ctools.ImageInstance` using its most-slices policy. The actual series
+directory and UID are saved in the inventory and audit, then reused at loading.
+Review this selection when several CT reconstructions are present.
 It does not copy or modify NAS source images. Duplicate scan identifiers fail
 rather than silently choosing one image. LUNA discovery is restricted to CT
 subsets so its separate lung-mask MHDs cannot be mistaken for CT scans.

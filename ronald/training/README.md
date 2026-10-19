@@ -16,6 +16,7 @@ Run from the repository root in Python 3.10+ (3.11 recommended). Install the
 PyTorch build appropriate for the destination CUDA driver, then:
 
 ```bash
+git submodule update --init --recursive
 python -m pip install -r requirements-training.txt
 python -m pytest tests/test_training_pipeline.py -q
 
@@ -57,8 +58,13 @@ No fixed server paths or dataset discovery conventions are embedded in the code.
 | `mediastinum` | Optional binary mediastinum mask to extend the crop |
 | `nodules` | Optional existing region-growing/nodule mask; takes precedence over LUNA generation |
 | `luna_seriesuid` | Match to `seriesuid` in LUNA `annotations.csv`; only used with `--luna-annotations` |
-| `series_uid` | Required if a DICOM directory contains multiple series |
+| `series_uid` | Selected DICOM series UID; the inventory builder records this and its actual directory |
 | `split` | Optional `training`, `validation`, or `test`; fill every row or leave every row empty |
+
+DICOM discovery and loading use `ctools.ImageInstance`, including its nested-folder
+search and most-slices selection policy. The inventory records the selected series
+directory and UID, so preprocessing reads that same series. Review the selected
+series against the pseudo-masks when multiple reconstructions exist.
 
 Paths may be absolute or relative to the inventory file. Masks must be scalar,
 binary 0/1 or 0/255 with valid physical coordinates. Nodule masks additionally

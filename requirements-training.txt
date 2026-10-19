@@ -1,5 +1,6 @@
-# Standalone training environment; no MONAI, UNETR, TotalSegmentator, or ctools required.
+# Training environment; ctools provides the existing nested-DICOM loader.
 # Install a hardware-compatible PyTorch wheel separately if using CUDA.
+./ctools
 torch>=2.3,<3
 numpy>=1.26,<3
 scipy>=1.11,<2

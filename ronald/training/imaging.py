@@ -1,21 +1,45 @@
 """Physical-space I/O, thoracic bounding boxes, and bounded nodule region growing."""
 from pathlib import Path
+from contextlib import contextmanager
 import numpy as np
 import SimpleITK as sitk
 from scipy import ndimage as ndi
 
 
+@contextmanager
+def ctools_reader():
+    # Empty parent directories are expected during nested-series discovery.
+    # Scope GDCM warning suppression; failures are reported by our caller.
+    warning_display = sitk.ProcessObject.GetGlobalWarningDisplay()
+    try:
+        from ctools import ImageInstance
+        sitk.ProcessObject.SetGlobalWarningDisplay(False)
+        yield ImageInstance
+    finally:
+        sitk.ProcessObject.SetGlobalWarningDisplay(warning_display)
+
+
+def resolve_dicom_series(path):
+    """Reuse ctools' most-slices policy and return the actual directory plus UID."""
+    with ctools_reader() as ImageInstance:
+        selected = ImageInstance.get_series_with_most_slices(str(path))
+    if selected is None:
+        return None
+    uid, directory = selected if isinstance(selected, tuple) else (selected, str(path))
+    return Path(directory), uid
+
+
 def read_image(path, series_uid=None):
     path = Path(path)
     if path.is_dir():
-        ids = sitk.ImageSeriesReader.GetGDCMSeriesIDs(str(path)) or []
-        if series_uid is None and len(ids) != 1:
-            raise ValueError(f'{path}: expected one DICOM series, found {len(ids)}; set series_uid')
-        if series_uid is not None and series_uid not in ids:
-            raise ValueError(f'{path}: series_uid not found')
-        reader = sitk.ImageSeriesReader()
-        reader.SetFileNames(sitk.ImageSeriesReader.GetGDCMSeriesFileNames(str(path), series_uid or ids[0]))
-        image = reader.Execute()
+        with ctools_reader() as ImageInstance:
+            if series_uid is not None:
+                ids = sitk.ImageSeriesReader.GetGDCMSeriesIDs(str(path)) or []
+                if series_uid not in ids:
+                    raise ValueError(f'{path}: selected series_uid not found; regenerate the inventory')
+            image = ImageInstance(show_exceptions=True, series_uid_prio='most_slices').read(str(path), series_uid=series_uid)
+        if image is None:
+            raise ValueError(f'{path}: ctools could not read a DICOM volume')
     else:
         image = sitk.ReadImage(str(path))
     if image.GetDimension() != 3 or image.GetNumberOfComponentsPerPixel() != 1:

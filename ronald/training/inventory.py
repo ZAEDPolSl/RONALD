@@ -7,6 +7,7 @@ import json
 import logging
 from pathlib import Path
 import unicodedata
+from .imaging import resolve_dicom_series
 
 LOG = logging.getLogger(__name__)
 FIELDS = ['case_id', 'patient_id', 'dataset', 'image', 'airways', 'vessels', 'lungs',
@@ -80,12 +81,13 @@ def build_inventory(config, read_mount=None, patient_map=None):
                 report.append({'dataset': dataset['name'], 'scan': scan, 'status': 'missing', 'fields': missing})
                 continue
             if dataset['kind'] in ('dicom', 'plcs4'):
-                import SimpleITK as sitk
-                ids = sitk.ImageSeriesReader.GetGDCMSeriesIDs(str(image)) or []
-                if len(ids) != 1:
-                    report.append({'dataset': dataset['name'], 'scan': scan, 'status': 'ambiguous_dicom', 'series_count': len(ids)})
+                selected = resolve_dicom_series(image)
+                if selected is None:
+                    report.append({'dataset': dataset['name'], 'scan': scan, 'status': 'no_dicom_series', 'image': str(paths['image'])})
+                    LOG.warning('%s / %s: ctools found no DICOM series under %s', dataset['name'], scan, image)
                     continue
-                series_uid = ids[0]
+                image, series_uid = selected
+                paths['image'] = image
             else:
                 series_uid = ''
             for key, filename in [('mediastinum', 'mediastinum.nrrd'), ('nodules', 'region_grow.nrrd')]:
@@ -102,6 +104,8 @@ def build_inventory(config, read_mount=None, patient_map=None):
                        luna_seriesuid=scan if dataset['key'] == 'luna16' else '')
             rows.append(row)
             report.append({'dataset': dataset['name'], 'scan': scan, 'case_id': case_id,
+                           'image': row['image'], 'series_uid': series_uid,
+                           'series_selection': 'ctools_most_slices' if series_uid else 'volume_file',
                            'status': 'included', 'identity_source': 'override' if case_id in overrides else dataset['identity_group']})
     if not rows:
         raise ValueError('No complete cases found')
