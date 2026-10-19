@@ -7,6 +7,9 @@ installation is needed. The starter on `origin/amrukwa/bronconet` was inspected
 four-class outputs, and sequential UNet/SwinUNETR runs are replaced here.
 Existing classical RONALD code is unchanged.
 
+For verified `/mnt/pmanas` roots, automatic inventory generation, and server commands,
+see [PMANAS.md](PMANAS.md).
+
 ## Environment and quick start
 
 Run from the repository root in Python 3.10+ (3.11 recommended). Install the
@@ -58,7 +61,8 @@ No fixed server paths or dataset discovery conventions are embedded in the code.
 | `split` | Optional `training`, `validation`, or `test`; fill every row or leave every row empty |
 
 Paths may be absolute or relative to the inventory file. Masks must be scalar,
-binary 0/1 or 0/255 with valid physical coordinates. Convert multi-label lung/lobe
+binary 0/1 or 0/255 with valid physical coordinates. Nodule masks additionally
+accept nonnegative integer instance labels; all positive IDs are unioned. Convert multi-label lung/lobe
 maps to a binary lung mask first. HU-masked images are not binary masks. The
 pipeline does not infer or thicken airway walls: they must be in `airways_final`.
 

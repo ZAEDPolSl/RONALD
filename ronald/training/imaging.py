@@ -23,10 +23,11 @@ def read_image(path, series_uid=None):
     return image
 
 
-def binary_on_reference(path, reference):
+def binary_on_reference(path, reference, allow_instance_labels=False):
     image = read_image(path)
     values = np.unique(sitk.GetArrayViewFromImage(image))
-    if not np.isfinite(values).all() or not np.isin(values, [0, 1, 255]).all():
+    valid_values = (np.all(values >= 0) and np.all(values == np.floor(values))) if allow_instance_labels else np.isin(values, [0, 1, 255]).all()
+    if not np.isfinite(values).all() or not valid_values:
         raise ValueError(f'{path}: expected binary 0/1 or 0/255 mask, not intensity/label map')
     mask = sitk.Resample(image > 0, reference, sitk.Transform(), sitk.sitkNearestNeighbor, 0, sitk.sitkUInt8)
     return sitk.GetArrayFromImage(mask).astype(bool)

@@ -1,0 +1,56 @@
+{
+  "mount": "/mnt/pmanas",
+  "work": "Ania/bronco-pretrain/ronald-unet",
+  "luna_annotations": "Ania/phd-data/luna-2016/raw/annotations.csv",
+  "luna_candidates": "Ania/phd-data/luna-2016/raw/candidates_V2.csv",
+  "datasets": [
+    {
+      "name": "Moltest 1",
+      "key": "moltest1",
+      "raw": "Wojtek/MIRASLC/Dane surowe/Moltest 1/NRRD",
+      "masks": "Ania/phd-data/moltest-1/masks",
+      "kind": "volume",
+      "pattern": "**/*.nrrd",
+      "identity_group": "moltest"
+    },
+    {
+      "name": "Moltest 2",
+      "key": "moltest2",
+      "raw": "Wojtek/MIRASLC/Dane surowe/Moltest 2",
+      "masks": "Ania/phd-data/moltest-2/masks",
+      "kind": "dicom",
+      "pattern": "*/*/DICOM",
+      "identity_group": "moltest",
+      "additional_masks": [
+        "Ania/phd-data/moltest_2_400/masks"
+      ]
+    },
+    {
+      "name": "DUKE",
+      "key": "duke",
+      "raw": "Ania/phd-data/DUKE/raw",
+      "masks": "Ania/phd-data/DUKE/masks",
+      "kind": "volume",
+      "pattern": "DLCS_subset*/**/*.nii.gz",
+      "identity_group": "duke"
+    },
+    {
+      "name": "PLCS4",
+      "key": "plcs4",
+      "raw": "OPPRP",
+      "masks": "Ania/phd-data/OPPRP/masks",
+      "kind": "plcs4",
+      "selection": "Ania/phd-data/OPPRP/plcs4_prediagnosis_selected_scans.csv",
+      "identity_group": "plcs4"
+    },
+    {
+      "name": "LUNA16",
+      "key": "luna16",
+      "raw": "Ania/phd-data/luna-2016/raw",
+      "masks": "Ania/phd-data/luna-2016/masks",
+      "kind": "volume",
+      "pattern": "subset*/**/*.mhd",
+      "identity_group": "luna16"
+    }
+  ]
+}

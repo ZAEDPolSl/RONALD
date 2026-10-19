@@ -180,7 +180,7 @@ def prepare(args):
             raise FileExistsError(f'{case_dir}: use a fresh output directory after an interrupted prepare')
         case_dir.mkdir()
         if paths['nodules']:
-            nodules = binary_on_reference(paths['nodules'], ref)
+            nodules = binary_on_reference(paths['nodules'], ref, allow_instance_labels=True)
             source = 'provided'
         elif row.get('luna_seriesuid') and args.luna_annotations:
             mask, grow_audit = grow_nodules(image, annotations[row['luna_seriesuid']], args.grow_lower_hu,
