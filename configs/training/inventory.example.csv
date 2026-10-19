@@ -1,0 +1,6 @@
+case_id,patient_id,dataset,image,airways,vessels,lungs,mediastinum,nodules,luna_seriesuid,series_uid,split
+moltest1_example,global_patient_001,Moltest 1,/data/moltest1/ct.nrrd,/data/moltest1/airways_final.nii.gz,/data/moltest1/vessels_final.nii.gz,/data/moltest1/lungs.nii.gz,/data/moltest1/mediastinum.nii.gz,/data/moltest1/region_grow.nii.gz,,,training
+duke_example,global_patient_002,DUKE,/data/duke/ct.nii.gz,/data/duke/airways_final.nii.gz,/data/duke/vessels_final.nii.gz,/data/duke/lungs.nii.gz,,,,,validation
+moltest2_example,global_patient_003,Moltest 2,/data/moltest2/DICOM,/data/moltest2/airways_final.nii.gz,/data/moltest2/vessels_final.nii.gz,/data/moltest2/lungs.nii.gz,,,,,training
+plcs4_example,global_patient_004,PLCS4,/data/plcs4/ct.nii.gz,/data/plcs4/airways_final.nii.gz,/data/plcs4/vessels_final.nii.gz,/data/plcs4/lungs.nii.gz,,,,,training
+luna_example,global_patient_005,LUNA16,/data/luna/SERIES_UID.mhd,/data/luna/airways_final.nii.gz,/data/luna/vessels_final.nii.gz,/data/luna/lungs_binary.nii.gz,,,SERIES_UID,,test

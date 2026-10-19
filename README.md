@@ -15,6 +15,14 @@ Features:
 
 Feel free to contribute or use this algorithm for research and development. Algorithm works best for low-dose CT.
 
+## Learning from RONALD pseudo-masks
+
+The [3D UNet training guide](ronald/training/README.md) provides a separate,
+three-class airway-with-wall/vessel/background pipeline with nodule exclusion,
+patient-level splits, TensorBoard, disk logs, checkpoint resume, and native-grid
+prediction. Start with [the example inventory](configs/training/inventory.example.csv)
+and [training configuration](configs/training/unet.json).
+
 # Installation
 
 ## Clone with Submodules
