@@ -218,3 +218,18 @@ def test_cuda_deterministic_training_step():
     loss, _ = criterion(logits, y, y == 0, torch.ones(1, device='cuda'))
     loss.backward()
     assert torch.isfinite(loss)
+
+
+def test_luna_class_one_selection_and_deduplication(tmp_path):
+    from ronald.training.prepare import select_positive_nodules
+    annotations = {'scan': [dict(coordX=0, coordY=0, coordZ=0, diameter_mm=8),
+                            dict(coordX=20, coordY=0, coordZ=0, diameter_mm=8)]}
+    path = tmp_path / 'candidates.csv'
+    path.write_text('seriesuid,coordX,coordY,coordZ,class\nscan,0,0,0,1\nscan,1,0,0,1\nscan,20,0,0,0\n')
+    selected, audit = select_positive_nodules(annotations, path)
+    assert selected['scan'] == [annotations['scan'][0]]
+    assert audit['positive_candidates'] == 2
+    assert audit['selected_nodules'] == 1
+    path.write_text('seriesuid,coordX,coordY,coordZ,class\nscan,100,0,0,1\n')
+    with pytest.raises(ValueError, match='matches 0'):
+        select_positive_nodules(annotations, path)

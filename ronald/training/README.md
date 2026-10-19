@@ -19,7 +19,8 @@ python -m pytest tests/test_training_pipeline.py -q
 python -m ronald.training.prepare \
   --inventory /data/inventory.csv \
   --output /scratch/ronald-cache \
-  --luna-annotations /data/LUNA16/annotations.csv
+  --luna-annotations /data/LUNA16/annotations.csv \
+  --luna-candidates /data/LUNA16/candidates_V2.csv
 
 python -m ronald.training.train \
   --manifest /scratch/ronald-cache/manifest.json \
@@ -90,8 +91,14 @@ all ablations. Test cases never enter training or checkpoint selection.
   supervision, never as proof that a scan has no nodules.
 
 [LUNA16 annotations](https://luna16.grand-challenge.org/Data/) describe reference
-nodules, not confirmed malignancy. All nodules in `annotations.csv` are used;
-`candidates_V2.csv` is not a segmentation annotation source. Malignant-only
+nodules, not confirmed malignancy. With `--luna-candidates`, only `class=1` candidates select reference nodules for
+region growing. Candidates are matched within the annotated nodule radius and
+deduplicated; growth uses the reference center and diameter. `class=0` never
+initiates growth. Missing or ambiguous matches fail explicitly. Selection counts
+are written to `luna_selection.json`. Without the candidate file, all rows in the
+standard `annotations.csv` are reference nodules; if a custom annotation CSV has
+a `class` column, only class 1 is loaded. Candidate points alone are not contours
+and lack diameters, so the reference annotation file is required. Malignant-only
 selection requires additional externally linked labels and should not make benign
 nodules become airway/vessel targets.
 

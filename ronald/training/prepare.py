@@ -14,6 +14,46 @@ from .imaging import read_image, binary_on_reference, prepare_image, grow_nodule
 LOG = logging.getLogger(__name__)
 
 
+def select_positive_nodules(annotations, candidates_path):
+    """Map class=1 candidates to reference nodules; grow once per reference.
+
+    Reference centers and diameters define growth, rather than multiple slightly
+    displaced detection candidates. Class=0 candidates never initiate growth.
+    """
+    selected = defaultdict(set)
+    positive_count = 0
+    with open(candidates_path, newline='') as f:
+        reader = csv.DictReader(f)
+        if not {'seriesuid', 'coordX', 'coordY', 'coordZ', 'class'}.issubset(reader.fieldnames or []):
+            raise ValueError('LUNA candidates require seriesuid, coordX/Y/Z, and class')
+        for row in reader:
+            label = float(row['class'])
+            if label not in (0, 1):
+                raise ValueError('LUNA candidate class must be 0 or 1')
+            if label != 1:
+                continue
+            positive_count += 1
+            uid = row['seriesuid']
+            refs = annotations.get(uid, [])
+            xyz = np.array([float(row[k]) for k in ('coordX', 'coordY', 'coordZ')])
+            if not np.isfinite(xyz).all() or not refs:
+                raise ValueError(f'{uid}: positive candidate has invalid coordinates or no reference annotations')
+            centers = np.array([[float(r[k]) for k in ('coordX', 'coordY', 'coordZ')] for r in refs])
+            radii = np.array([float(r['diameter_mm']) / 2 for r in refs])
+            distance = np.linalg.norm(centers - xyz, axis=1)
+            matching = np.flatnonzero(distance <= radii + 1e-3)
+            if len(matching) != 1:
+                raise ValueError(f'{uid}: positive candidate matches {len(matching)} reference nodules; check annotations')
+            selected[uid].add(int(matching[0]))
+    if not positive_count:
+        raise ValueError('No class=1 LUNA candidates found')
+    result = defaultdict(list, {uid: [annotations[uid][i] for i in sorted(indices)]
+                               for uid, indices in selected.items()})
+    audit = {'positive_candidates': positive_count, 'selected_nodules': sum(map(len, result.values())),
+             'reference_nodules': sum(map(len, annotations.values()))}
+    return result, audit
+
+
 def split_cases(cases, seed=42, validation_fraction=.15, test_fraction=.15):
     if not 0 < validation_fraction < 1 or not 0 <= test_fraction < 1 or validation_fraction + test_fraction >= 1:
         raise ValueError('Invalid split fractions')
@@ -85,7 +125,18 @@ def prepare(args):
             if not required.issubset(reader.fieldnames or []):
                 raise ValueError('Use LUNA annotations.csv with diameter_mm, not the unfiltered candidate list')
             for row in reader:
+                if 'class' in row:
+                    if float(row['class']) not in (0, 1):
+                        raise ValueError('Annotation class must be 0 or 1')
+                    if float(row['class']) != 1:
+                        continue
                 annotations[row['seriesuid']].append(row)
+    if args.luna_candidates:
+        if not args.luna_annotations:
+            raise ValueError('--luna-candidates requires --luna-annotations for reference diameters')
+        annotations, selection_audit = select_positive_nodules(annotations, args.luna_candidates)
+        (out / 'luna_selection.json').write_text(json.dumps(selection_audit, indent=2))
+        LOG.info('LUNA class=1 selection: %s', selection_audit)
     seen_ids, seen_images, cases, audits = set(), set(), [], []
     for row in rows:
         for key in ('case_id', 'patient_id', 'dataset', 'image', 'airways', 'vessels', 'lungs'):
@@ -185,6 +236,7 @@ def main():
     p.add_argument('--inventory', required=True)
     p.add_argument('--output', required=True)
     p.add_argument('--luna-annotations')
+    p.add_argument('--luna-candidates', help='LUNA candidates CSV; only class=1 selects nodules for growing')
     p.add_argument('--spacing', nargs=3, type=float, default=[.8, .8, .8], help='XYZ mm; no fixed-cube resizing')
     p.add_argument('--margin-mm', type=float, default=15.)
     p.add_argument('--hu', nargs=2, type=float, default=[-1000., 500.])
