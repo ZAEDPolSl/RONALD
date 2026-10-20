@@ -152,3 +152,31 @@ plain `--resume`.
 Inspect preparation audit and region-grown
 nodules before a full training run. Inventory/audit files contain private source
 paths and stay on the server; do not commit them to Git.
+
+## Interrupted or stalled inventory
+
+Inventory now discovers scans incrementally and checkpoints every completed check
+in `inventory-ctools.inventory-state/`. Stop the old process before updating:
+
+```bash
+git pull --ff-only origin amrukwa/ronald-unet
+export WORK=/mnt/pmanas/Ania/bronco-pretrain/ronald-unet
+python -m ronald.training.inventory \
+  --config configs/training/pmanas.json \
+  --output "$WORK/inventory-ctools.csv" \
+  --resume --timeout-seconds 120
+```
+
+Use that same command after an interruption. The first run with this version can
+also use `--resume`. An unfinished inventory from older code has no checkpoints,
+so its previous in-memory checks must run once again. Completed checks (including
+missing-mask exclusions) are reused; keep source files, selection tables and
+settings unchanged. To refresh changed inputs, choose a new output filename.
+
+A child process bounds stalled filesystem/DICOM calls. After 120 seconds without
+progress the command stops with the current stage; it does not silently exclude
+the scan or publish a partial CSV. `current.json` in the state directory records
+the latest stage. Increase the timeout for a slow but working server, or resolve
+the reported storage/path issue and resume. Discovery must traverse folders again,
+but completed scans do not repeat mask or DICOM checks. Dataset bars count scans
+as they are discovered, so their total is initially unknown.

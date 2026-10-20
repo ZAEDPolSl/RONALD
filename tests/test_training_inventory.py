@@ -119,3 +119,36 @@ def test_ctools_empty_directory_and_direct_series(tmp_path):
     uid = '1.2.826.0.1.3680043.2.1125.5678'
     write_dicom_series(tmp_path / 'direct', uid, 12)
     assert resolve_dicom_series(tmp_path / 'direct') == (tmp_path / 'direct', uid)
+
+
+def test_inventory_checkpoint_survives_failure_and_resume(tmp_path):
+    from ronald.training.inventory import resumable_inventory
+    for folder in ['raw', 'masks/scan']:
+        (tmp_path / folder).mkdir(parents=True)
+    (tmp_path / 'raw/scan.nrrd').touch()
+    for name in ['airways_final.nrrd', 'vessels_final.nrrd', 'lungs.nrrd']:
+        (tmp_path / 'masks/scan' / name).touch()
+    dataset = dict(name='one', key='one', raw='raw', masks='masks',
+                   kind='volume', pattern='*.nrrd', identity_group='one')
+    config = {'mount': str(tmp_path), 'datasets': [dataset, dict(dataset, name='two', key='two', raw='later')]}
+    out = tmp_path / 'inventory.csv'
+    with pytest.raises(RuntimeError, match='Missing configured roots'):
+        resumable_inventory(config, None, {}, out, timeout=30)
+    assert len(list(out.with_suffix('.inventory-state').glob('case-*.json'))) == 1
+    # Completed mask checks must not run again. Source tree is otherwise assumed immutable.
+    (tmp_path / 'masks/scan/vessels_final.nrrd').unlink()
+    (tmp_path / 'later').mkdir()
+    rows, report = resumable_inventory(config, None, {}, out, resume=True, timeout=30)
+    assert len(rows) == len(report) == 1
+    with pytest.raises(ValueError, match='settings changed'):
+        resumable_inventory(config, None, {'x': 'y'}, out, resume=True)
+
+
+def test_inventory_timeout_leaves_restartable_state(tmp_path):
+    from ronald.training.inventory import resumable_inventory
+    config = {'mount': str(tmp_path), 'datasets': []}
+    out = tmp_path / 'inventory.csv'
+    with pytest.raises(TimeoutError, match='Completed checks saved'):
+        resumable_inventory(config, None, {}, out, timeout=0.00001)
+    assert out.with_suffix('.inventory-state').joinpath('settings.json').exists()
+    assert not out.exists()

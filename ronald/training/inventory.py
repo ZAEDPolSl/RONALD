@@ -5,6 +5,8 @@ import csv
 import hashlib
 import json
 import logging
+import multiprocessing
+import os
 from pathlib import Path
 import unicodedata
 from .imaging import resolve_dicom_series
@@ -45,7 +47,7 @@ def candidate_scans(dataset, mount):
                 yield path.name, path, identity
     else:
         paths = raw.glob(dataset['pattern'])
-        for path in sorted(paths):
+        for path in paths:
             if dataset['kind'] == 'dicom':
                 scan = path.parent.name
             else:
@@ -53,19 +55,30 @@ def candidate_scans(dataset, mount):
             yield scan, path, scan
 
 
-def build_inventory(config, read_mount=None, patient_map=None):
+def build_inventory(config, read_mount=None, patient_map=None, completed=None, notify=None):
     """read_mount allows inspecting the macOS NAS mount while emitting Linux paths."""
     mount = Path(read_mount or config['mount'])
     target = Path(config['mount'])
     rows, report, seen = [], [], set()
     overrides = patient_map or {}
+    completed = completed or {}
+    notify = notify or (lambda *args: None)
+
+    class Report(list):
+        def append(self, entry):
+            super().append(entry)
+            notify("completed", {"case_id": case_id, "report": entry,
+                                  "row": rows[-1] if entry["status"] == "included" else None})
+
+    report = Report()
     for dataset in config['datasets']:
         LOG.info('Discovering %s', dataset['name'])
+        notify('current', f"Checking roots / discovering {dataset['name']}")
         root = mount / dataset['raw']
         masks = mount / dataset['masks']
         if not root.is_dir() or not masks.is_dir():
             raise FileNotFoundError(f'Missing configured roots for {dataset["name"]}: {root}, {masks}')
-        scans = list(candidate_scans(dataset, mount))
+        scans = candidate_scans(dataset, mount)
         included = skipped = 0
         with logging_redirect_tqdm(), tqdm(scans, desc=f"Inventory: {dataset['name']}",
                                           unit='scan', dynamic_ncols=True) as progress:
@@ -74,6 +87,18 @@ def build_inventory(config, read_mount=None, patient_map=None):
                 if case_id in seen:
                     raise ValueError(f'Duplicate scan identifier in {dataset["name"]}: {scan}; resolve before preparing')
                 seen.add(case_id)
+                if case_id in completed:
+                    entry = completed[case_id]
+                    if entry['row'] is not None:
+                        rows.append(entry['row'])
+                        included += 1
+                    else:
+                        skipped += 1
+                    list.append(report, entry['report'])
+                    notify('current', f"Discovering {dataset['name']} after cached {scan}")
+                    progress.set_postfix(included=included, skipped=skipped, refresh=False)
+                    continue
+                notify('current', f"Checking {dataset['name']} / {scan}: {image}")
                 folder = masks / scan
                 required_masks = ('airways_final.nrrd', 'vessels_final.nrrd', 'lungs.nrrd')
                 for candidate in [folder, *[mount / extra / scan for extra in dataset.get('additional_masks', [])]]:
@@ -121,7 +146,79 @@ def build_inventory(config, read_mount=None, patient_map=None):
                 progress.set_postfix(included=included, skipped=skipped, refresh=False)
     if not rows:
         raise ValueError('No complete cases found')
-    return rows, report
+    return rows, list(report)
+
+
+def _inventory_worker(connection, config, read_mount, overrides, completed):
+    try:
+        result = build_inventory(config, read_mount, overrides, completed,
+                                 lambda kind, data: connection.send((kind, data)))
+        connection.send(('done', result))
+    except BaseException as exc:
+        connection.send(('error', f'{type(exc).__name__}: {exc}'))
+    finally:
+        connection.close()
+
+
+def resumable_inventory(config, read_mount, overrides, out, resume=False, timeout=120):
+    """Bound stalled filesystem/native-library calls in a disposable child process."""
+    from .preparation_state import atomic_json
+    import fcntl
+    state_dir = out.with_suffix('.inventory-state')
+    state_dir.mkdir(parents=True, exist_ok=True)
+    with (state_dir / 'lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        identity = {'version': 1, 'config': config, 'read_mount': str(read_mount) if read_mount else None,
+                    'patient_map': overrides}
+        settings = state_dir / 'settings.json'
+        if settings.exists():
+            if not resume:
+                raise ValueError('Inventory checkpoint exists; use --resume')
+            if json.loads(settings.read_text()) != identity:
+                raise ValueError('Inventory settings changed; use a new output filename')
+        else:
+            if out.exists():
+                raise ValueError('Existing inventory has no checkpoint; use a new output filename')
+            atomic_json(settings, identity)
+        completed = {p.stem: json.loads(p.read_text()) for p in state_dir.glob('case-*.json')}
+        completed = {entry['case_id']: entry for entry in completed.values()}
+        ctx = multiprocessing.get_context('spawn')
+        receiver, sender = ctx.Pipe(duplex=False)
+        worker = ctx.Process(target=_inventory_worker,
+                             args=(sender, config, read_mount, overrides, completed), daemon=True)
+        current = 'Starting inventory worker'
+        worker.start()
+        sender.close()
+        try:
+            while True:
+                if not receiver.poll(timeout):
+                    raise TimeoutError(f'Inventory stalled for {timeout:g}s: {current}. '
+                                       f'Completed checks saved in {state_dir}; retry with --resume.')
+                try:
+                    kind, data = receiver.recv()
+                except EOFError as exc:
+                    raise RuntimeError(f'Inventory worker exited unexpectedly: {current}') from exc
+                if kind == 'current':
+                    current = data
+                    atomic_json(state_dir / 'current.json', {'stage': current})
+                    LOG.info('%s', current)
+                elif kind == 'completed':
+                    atomic_json(state_dir / ('case-' + data['case_id'] + '.json'), data)
+                    current = 'Discovering next scan after ' + data['case_id']
+                    atomic_json(state_dir / 'current.json', {'stage': current})
+                elif kind == 'error':
+                    raise RuntimeError(data)
+                elif kind == 'done':
+                    atomic_json(state_dir / 'current.json', {'stage': 'complete'})
+                    return data
+        finally:
+            if worker.is_alive():
+                worker.terminate()
+            worker.join(timeout=2)
+            if worker.is_alive():
+                worker.kill()
+                worker.join(timeout=2)
+            receiver.close()
 
 
 def main():
@@ -130,11 +227,15 @@ def main():
     p.add_argument('--output', required=True)
     p.add_argument('--read-mount', help='Optional local mount; emitted paths retain configured Linux prefix')
     p.add_argument('--patient-map', help='Optional CSV with case_id,patient_id for verified cross-cohort linkage')
+    p.add_argument('--resume', action='store_true', help='Reuse completed inventory checks')
+    p.add_argument('--timeout-seconds', type=float, default=120, help='Stop after this long without progress (default: 120)')
     args = p.parse_args()
+    if not 0 < args.timeout_seconds < float('inf'):
+        p.error('--timeout-seconds must be positive and finite')
     logging.basicConfig(level=logging.INFO)
     config = json.loads(Path(args.config).read_text())
     out = Path(args.output)
-    if out.exists():
+    if out.exists() and not args.resume:
         raise FileExistsError(out)
     overrides = {}
     if args.patient_map:
@@ -143,12 +244,17 @@ def main():
                 if not row['patient_id'] or row['case_id'] in overrides:
                     raise ValueError('Empty/duplicate patient-map entry')
                 overrides[row['case_id']] = row['patient_id']
-    rows, report = build_inventory(config, args.read_mount, overrides)
+    rows, report = resumable_inventory(config, args.read_mount, overrides, out,
+                                       args.resume, args.timeout_seconds)
     out.parent.mkdir(parents=True, exist_ok=True)
-    with out.open('w', newline='') as f:
+    temporary = out.with_name(out.name + '.tmp')
+    with temporary.open('w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(sorted(rows, key=lambda row: row["case_id"]))
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temporary, out)
     audit = {'included_by_dataset': dict(Counter(r['dataset'] for r in rows)),
              'status_counts': dict(Counter(r['status'] for r in report)), 'cases': report}
     out.with_suffix('.audit.json').write_text(json.dumps(audit, indent=2))
