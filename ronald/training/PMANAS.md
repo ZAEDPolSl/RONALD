@@ -119,6 +119,36 @@ tensorboard --logdir "$WORK/run-01/tensorboard" --port 6006
 ```
 
 Use a fresh inventory filename and cache directory for a new preparation; keep
-both unchanged when resuming training. Inspect preparation audit and region-grown
+both unchanged when resuming training.
+
+## Resume data preparation
+
+For the existing `inventory-ctools.csv` / `cache-ctools` run:
+
+```bash
+export WORK=/mnt/pmanas/Ania/bronco-pretrain/ronald-unet
+export LUNA=/mnt/pmanas/Ania/phd-data/luna-2016/raw
+
+python -m ronald.training.prepare \
+  --inventory "$WORK/inventory-ctools.csv" \
+  --output "$WORK/cache-ctools" \
+  --luna-annotations "$LUNA/annotations.csv" \
+  --luna-candidates "$LUNA/candidates_V2.csv" \
+  --spacing 0.8 0.8 0.8 --margin-mm 15 --hu -1000 500 --seed 42 \
+  --resume
+```
+
+Repeat your original arguments if they differ from these defaults. Completed scans
+are skipped after metadata verification; interrupted scans are rebuilt. Do not run
+preparation and resume concurrently against the same output directory.
+
+If the cache was started with code predating this feature (no `prepare_state.json`),
+add `--adopt-legacy-cache` for the first resume **only when the original settings
+and inputs are unchanged**. This reuses audited complete arrays and adds completion
+records; it reads native CTs once to recover their hashes. Old uncompleted scan
+folders are preserved separately before rebuilding. Subsequent interruptions use
+plain `--resume`.
+
+Inspect preparation audit and region-grown
 nodules before a full training run. Inventory/audit files contain private source
 paths and stay on the server; do not commit them to Git.

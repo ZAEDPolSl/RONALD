@@ -11,6 +11,7 @@ import numpy as np
 import SimpleITK as sitk
 from .imaging import read_image, binary_on_reference, prepare_image, grow_nodules
 from .progress import dataset_progress
+from .preparation_state import PreparationState, atomic_json, preparation_lock, source_snapshot
 
 LOG = logging.getLogger(__name__)
 
@@ -110,9 +111,13 @@ def validate_splits(splits):
 def prepare(args):
     out = Path(args.output).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    if (out / 'manifest.json').exists():
-        raise FileExistsError('Use a new output directory; existing manifest will not be overwritten')
-    logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(), logging.FileHandler(out / 'prepare.log')])
+    with preparation_lock(out):
+        state = PreparationState(out, args)
+        logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(), logging.FileHandler(out / 'prepare.log')])
+        return prepare_locked(args, out, state)
+
+
+def prepare_locked(args, out, state):
     inventory = Path(args.inventory).resolve()
     with inventory.open(newline='') as f:
         rows = list(csv.DictReader(f))
@@ -136,7 +141,7 @@ def prepare(args):
         if not args.luna_annotations:
             raise ValueError('--luna-candidates requires --luna-annotations for reference diameters')
         annotations, selection_audit = select_positive_nodules(annotations, args.luna_candidates)
-        (out / 'luna_selection.json').write_text(json.dumps(selection_audit, indent=2))
+        atomic_json(out / 'luna_selection.json', selection_audit)
         LOG.info('LUNA class=1 selection: %s', selection_audit)
     seen_ids, seen_images, cases, audits = set(), set(), [], []
     for row in dataset_progress(rows):
@@ -157,6 +162,29 @@ def prepare(args):
         if image_key in seen_images:
             raise ValueError(f'Duplicate image in inventory: {image_key}')
         seen_images.add(image_key)
+        sources = source_snapshot(paths)
+        completed = state.completed(case_id, sources)
+        if completed is not None:
+            cases.append(completed['case'])
+            audits.append(completed['audit'])
+            LOG.info('Reusing completed %s (%s)', case_id, row['dataset'])
+            continue
+        legacy_audit = state.validate_legacy(case_id, args.spacing)
+        if legacy_audit is not None:
+            LOG.warning('Adopting legacy %s using asserted original settings; hashing native CT once', case_id)
+            image = read_image(paths['image'], row.get('series_uid') or None)
+            image_hash = hashlib.sha256(sitk.GetArrayFromImage(image).tobytes()).hexdigest()
+            case = {'case_id': case_id, 'patient_id': row['patient_id'], 'dataset': row['dataset'],
+                    'cache': case_id, 'image': paths['image'], 'image_sha256': image_hash,
+                    'has_nodules': legacy_audit['has_nodules'], 'nodule_source': legacy_audit['nodule_source'],
+                    'split': row.get('split', '')}
+            if source_snapshot(paths) != sources:
+                raise ValueError(f'{case_id}: source files changed while adopting the cache')
+            state.finish(out / case_id, case, legacy_audit, sources)
+            cases.append(case)
+            audits.append(legacy_audit)
+            atomic_json(out / 'audit.json', audits)
+            continue
         LOG.info('Preparing %s (%s)', case_id, row['dataset'])
         image = read_image(paths['image'], row.get('series_uid') or None)
         # Hash native voxel data to detect renamed/reformatted duplicates in splits.
@@ -176,10 +204,7 @@ def prepare(args):
                 LOG.warning('%s: %d %s voxels outside thoracic crop', case_id, audit[f'{name}_outside_crop'], name)
         source = 'unavailable'
         nodules = np.zeros(air.shape, dtype=bool)
-        case_dir = out / case_id
-        if case_dir.exists():
-            raise FileExistsError(f'{case_dir}: use a fresh output directory after an interrupted prepare')
-        case_dir.mkdir()
+        case_dir = state.staging(case_id)
         if paths['nodules']:
             nodules = binary_on_reference(paths['nodules'], ref, allow_instance_labels=True)
             source = 'provided'
@@ -218,17 +243,29 @@ def prepare(args):
         geometry = {'size_xyz': list(ref.GetSize()), 'spacing_xyz': list(ref.GetSpacing()),
                     'origin_xyz': list(ref.GetOrigin()), 'direction': list(ref.GetDirection()),
                     'crop_start_zyx': [s.start for s in box], 'crop_stop_zyx': [s.stop for s in box]}
-        (case_dir / 'geometry.json').write_text(json.dumps(geometry, indent=2))
-        cases.append({'case_id': case_id, 'patient_id': row['patient_id'], 'dataset': row['dataset'],
+        atomic_json(case_dir / 'geometry.json', geometry)
+        case = {'case_id': case_id, 'patient_id': row['patient_id'], 'dataset': row['dataset'],
                       'cache': case_id, 'image': paths['image'], 'image_sha256': image_hash,
-                      'has_nodules': has_nodules, 'nodule_source': source, 'split': row.get('split', '')})
+                      'has_nodules': has_nodules, 'nodule_source': source, 'split': row.get('split', '')}
+        if source_snapshot(paths) != sources:
+            raise ValueError(f'{case_id}: source files changed during preparation')
+        state.finish(case_dir, case, audit, sources)
+        cases.append(case)
         audits.append(audit)
-        (out / 'audit.json').write_text(json.dumps(audits, indent=2))
+        atomic_json(out / 'audit.json', audits)
     splits = split_cases(cases, args.seed, args.validation_fraction, args.test_fraction)
     manifest = {'version': 1, 'classes': {'0': 'background', '1': 'airway_with_wall', '2': 'vessel'},
                 'preprocessing': {'spacing_xyz': args.spacing, 'margin_mm': args.margin_mm, 'hu': args.hu},
-                'preparation': vars(args), 'splits': splits}
-    (out / 'manifest.json').write_text(json.dumps(manifest, indent=2))
+                'preparation': {**state.identity['settings'], 'output': str(out)}, 'splits': splits}
+    atomic_json(out / 'audit.json', audits)
+    manifest_path = out / 'manifest.json'
+    if manifest_path.exists():
+        existing = json.loads(manifest_path.read_text())
+        if existing['splits'] != splits or existing['preprocessing'] != manifest['preprocessing']:
+            raise ValueError('Existing manifest disagrees with completed scans; use a new output directory')
+        LOG.info('Preparation already complete; preserving the existing manifest')
+    else:
+        atomic_json(manifest_path, manifest)
     LOG.info('Saved manifest: %s', {k: len(v) for k, v in splits.items()})
 
 
@@ -236,6 +273,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--inventory', required=True)
     p.add_argument('--output', required=True)
+    p.add_argument('--resume', action='store_true', help='Reuse completed scans with unchanged inputs/settings')
+    p.add_argument('--adopt-legacy-cache', action='store_true',
+                   help='With --resume, assert that old unmarked cache used the same original inputs/settings')
     p.add_argument('--luna-annotations')
     p.add_argument('--luna-candidates', help='LUNA candidates CSV; only class=1 selects nodules for growing')
     p.add_argument('--spacing', nargs=3, type=float, default=[.8, .8, .8], help='XYZ mm; no fixed-cube resizing')
@@ -249,6 +289,8 @@ def main():
     p.add_argument('--grow-tolerance-hu', type=float, default=250.)
     p.add_argument('--grow-radius-scale', type=float, default=1.25)
     args = p.parse_args()
+    if args.adopt_legacy_cache and not args.resume:
+        p.error('--adopt-legacy-cache requires --resume')
     if min(args.spacing) <= 0 or args.margin_mm < 0 or args.hu[0] >= args.hu[1]:
         p.error('Require positive spacing, nonnegative margin, increasing HU range')
     if args.grow_lower_hu >= args.grow_upper_hu or args.grow_tolerance_hu <= 0 or args.grow_radius_scale <= 0:

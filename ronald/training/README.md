@@ -123,9 +123,31 @@ The result is not a validated nodule contour. Review the saved native
 `nodules_region_grow.nii.gz` overlays and `audit.json`; provide corrected masks
 through `nodules` when needed. No spherical fallback is silently labeled background.
 
-Preparation requires a fresh output directory and fails on missing files or invalid
-geometry/identities. An interrupted preparation leaves diagnostic outputs; rerun
-into a new directory. The manifest and audit retain paths/IDs, so store them with
+Preparation starts in a fresh output directory and fails on missing files or invalid
+geometry/identities. After interruption, repeat the exact preparation command with
+`--resume`. Completed scans are reused; only an interrupted scan and remaining scans
+are processed. `prepare_state.json` fingerprints configuration and inventory/LUNA
+CSV content. Each scan has `complete.json` with case/audit metadata, source sizes
+and modification times, and output sizes/times. Source metadata checks include
+DICOM files and MHD payloads; they do not reread complete CT pixels. Do not edit
+source or cache files while preparing. This is a change-detection check, not a
+cryptographic integrity check of every voxel file.
+
+Scan output is written into `.partial/<case_id>` and atomically renamed into place
+only when all outputs and the completion record are written. A cache-directory lock
+prevents concurrent preparation writers. Audit/manifest JSON writes are atomic.
+Running `--resume` on an already finished cache validates and reuses it without
+rewriting its manifest, preserving training checkpoint compatibility.
+
+For a partial cache created **before preparation resume support**, use
+`--resume --adopt-legacy-cache` once, with the original inventory and every original
+preprocessing/region-growing setting. This option asserts that these are unchanged:
+the old format did not record enough provenance to verify that assertion. It checks
+old arrays and audit entries, reads each adopted native CT once for its hash, and
+reuses the prepared arrays. An unfinished old scan is moved aside under
+`.legacy-incomplete-*` and rebuilt. Later resumes only need `--resume`. Missing or
+unreadable legacy `audit.json` prevents adoption. If original settings are uncertain,
+start a fresh cache instead. The manifest and audit retain paths/IDs, so store them with
 the same access controls as the research data.
 
 ## Training objective and sampling
