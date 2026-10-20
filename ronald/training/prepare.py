@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import SimpleITK as sitk
 from .imaging import read_image, binary_on_reference, prepare_image, grow_nodules
+from .progress import dataset_progress
 
 LOG = logging.getLogger(__name__)
 
@@ -138,7 +139,7 @@ def prepare(args):
         (out / 'luna_selection.json').write_text(json.dumps(selection_audit, indent=2))
         LOG.info('LUNA class=1 selection: %s', selection_audit)
     seen_ids, seen_images, cases, audits = set(), set(), [], []
-    for row in rows:
+    for row in dataset_progress(rows):
         for key in ('case_id', 'patient_id', 'dataset', 'image', 'airways', 'vessels', 'lungs'):
             if not row.get(key, '').strip():
                 raise ValueError(f'Missing {key}: {row}')

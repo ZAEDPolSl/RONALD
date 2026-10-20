@@ -8,6 +8,8 @@ import logging
 from pathlib import Path
 import unicodedata
 from .imaging import resolve_dicom_series
+from tqdm.auto import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 LOG = logging.getLogger(__name__)
 FIELDS = ['case_id', 'patient_id', 'dataset', 'image', 'airways', 'vessels', 'lungs',
@@ -63,50 +65,60 @@ def build_inventory(config, read_mount=None, patient_map=None):
         masks = mount / dataset['masks']
         if not root.is_dir() or not masks.is_dir():
             raise FileNotFoundError(f'Missing configured roots for {dataset["name"]}: {root}, {masks}')
-        for scan, image, identity in candidate_scans(dataset, mount):
-            case_id = dataset['key'] + '_' + hashlib.sha256(scan.encode()).hexdigest()[:16]
-            if case_id in seen:
-                raise ValueError(f'Duplicate scan identifier in {dataset["name"]}: {scan}; resolve before preparing')
-            seen.add(case_id)
-            folder = masks / scan
-            required_masks = ('airways_final.nrrd', 'vessels_final.nrrd', 'lungs.nrrd')
-            for candidate in [folder, *[mount / extra / scan for extra in dataset.get('additional_masks', [])]]:
-                if all((candidate / name).is_file() for name in required_masks):
-                    folder = candidate
-                    break
-            paths = {'image': image, **{k: folder / filename for k, filename in
-                     [('airways', 'airways_final.nrrd'), ('vessels', 'vessels_final.nrrd'), ('lungs', 'lungs.nrrd')]}}
-            missing = [key for key, path in paths.items() if not path.exists()]
-            if missing:
-                report.append({'dataset': dataset['name'], 'scan': scan, 'status': 'missing', 'fields': missing})
-                continue
-            if dataset['kind'] in ('dicom', 'plcs4'):
-                selected = resolve_dicom_series(image)
-                if selected is None:
-                    report.append({'dataset': dataset['name'], 'scan': scan, 'status': 'no_dicom_series', 'image': str(paths['image'])})
-                    LOG.warning('%s / %s: ctools found no DICOM series under %s', dataset['name'], scan, image)
+        scans = list(candidate_scans(dataset, mount))
+        included = skipped = 0
+        with logging_redirect_tqdm(), tqdm(scans, desc=f"Inventory: {dataset['name']}",
+                                          unit='scan', dynamic_ncols=True) as progress:
+            for scan, image, identity in progress:
+                case_id = dataset['key'] + '_' + hashlib.sha256(scan.encode()).hexdigest()[:16]
+                if case_id in seen:
+                    raise ValueError(f'Duplicate scan identifier in {dataset["name"]}: {scan}; resolve before preparing')
+                seen.add(case_id)
+                folder = masks / scan
+                required_masks = ('airways_final.nrrd', 'vessels_final.nrrd', 'lungs.nrrd')
+                for candidate in [folder, *[mount / extra / scan for extra in dataset.get('additional_masks', [])]]:
+                    if all((candidate / name).is_file() for name in required_masks):
+                        folder = candidate
+                        break
+                paths = {'image': image, **{k: folder / filename for k, filename in
+                         [('airways', 'airways_final.nrrd'), ('vessels', 'vessels_final.nrrd'), ('lungs', 'lungs.nrrd')]}}
+                missing = [key for key, path in paths.items() if not path.exists()]
+                if missing:
+                    report.append({'dataset': dataset['name'], 'scan': scan, 'status': 'missing', 'fields': missing})
+                    skipped += 1
+                    progress.set_postfix(included=included, skipped=skipped, refresh=False)
                     continue
-                image, series_uid = selected
-                paths['image'] = image
-            else:
-                series_uid = ''
-            for key, filename in [('mediastinum', 'mediastinum.nrrd'), ('nodules', 'region_grow.nrrd')]:
-                path = folder / filename
-                if path.is_file() and not (key == 'nodules' and dataset['key'] == 'luna16'):
-                    paths[key] = path
-            # Do not infer the semantics of intermediate/mimseg/ROI variants from
-            # their filenames. Only the configured canonical region-grow mask is used.
-            row = {key: '' for key in FIELDS}
-            row.update({key: str(target / path.relative_to(mount)) for key, path in paths.items()})
-            patient_key = dataset['identity_group'] + ':' + normalized_identity(identity)
-            row.update(case_id=case_id, patient_id=overrides.get(case_id, hashlib.sha256(patient_key.encode()).hexdigest()),
-                       dataset=dataset['name'], series_uid=series_uid,
-                       luna_seriesuid=scan if dataset['key'] == 'luna16' else '')
-            rows.append(row)
-            report.append({'dataset': dataset['name'], 'scan': scan, 'case_id': case_id,
-                           'image': row['image'], 'series_uid': series_uid,
-                           'series_selection': 'ctools_most_slices' if series_uid else 'volume_file',
-                           'status': 'included', 'identity_source': 'override' if case_id in overrides else dataset['identity_group']})
+                if dataset['kind'] in ('dicom', 'plcs4'):
+                    selected = resolve_dicom_series(image)
+                    if selected is None:
+                        report.append({'dataset': dataset['name'], 'scan': scan, 'status': 'no_dicom_series', 'image': str(paths['image'])})
+                        LOG.warning('%s / %s: ctools found no DICOM series under %s', dataset['name'], scan, image)
+                        skipped += 1
+                        progress.set_postfix(included=included, skipped=skipped, refresh=False)
+                        continue
+                    image, series_uid = selected
+                    paths['image'] = image
+                else:
+                    series_uid = ''
+                for key, filename in [('mediastinum', 'mediastinum.nrrd'), ('nodules', 'region_grow.nrrd')]:
+                    path = folder / filename
+                    if path.is_file() and not (key == 'nodules' and dataset['key'] == 'luna16'):
+                        paths[key] = path
+                # Do not infer the semantics of intermediate/mimseg/ROI variants from
+                # their filenames. Only the configured canonical region-grow mask is used.
+                row = {key: '' for key in FIELDS}
+                row.update({key: str(target / path.relative_to(mount)) for key, path in paths.items()})
+                patient_key = dataset['identity_group'] + ':' + normalized_identity(identity)
+                row.update(case_id=case_id, patient_id=overrides.get(case_id, hashlib.sha256(patient_key.encode()).hexdigest()),
+                           dataset=dataset['name'], series_uid=series_uid,
+                           luna_seriesuid=scan if dataset['key'] == 'luna16' else '')
+                rows.append(row)
+                report.append({'dataset': dataset['name'], 'scan': scan, 'case_id': case_id,
+                               'image': row['image'], 'series_uid': series_uid,
+                               'series_selection': 'ctools_most_slices' if series_uid else 'volume_file',
+                               'status': 'included', 'identity_source': 'override' if case_id in overrides else dataset['identity_group']})
+                included += 1
+                progress.set_postfix(included=included, skipped=skipped, refresh=False)
     if not rows:
         raise ValueError('No complete cases found')
     return rows, report
