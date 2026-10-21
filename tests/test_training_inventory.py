@@ -152,3 +152,39 @@ def test_inventory_timeout_leaves_restartable_state(tmp_path):
         resumable_inventory(config, None, {}, out, timeout=0.00001)
     assert out.with_suffix('.inventory-state').joinpath('settings.json').exists()
     assert not out.exists()
+
+
+def _stall_one_scan(connection, config, read_mount, overrides, completed):
+    import time
+    if 'blocked' not in completed and not (Path(config['mount']) / 'recovered').exists():
+        connection.send(('scan', dict(case_id='blocked', dataset='synthetic',
+                                      scan='blocked', image='synthetic')))
+        connection.send(('current', 'ctools DICOM discovery: synthetic'))
+        time.sleep(30)
+    elif 'blocked' not in completed:
+        entry = dict(case_id='blocked', row={'case_id': 'blocked'},
+                     report={'case_id': 'blocked', 'status': 'included'})
+        connection.send(('completed', entry))
+        completed['blocked'] = entry
+    connection.send(('done', ([{'case_id': 'healthy'}],
+                              [entry['report'] for entry in completed.values()])))
+    connection.close()
+
+
+def test_defer_stalled_scan_and_retry(tmp_path, monkeypatch):
+    import ronald.training.inventory as inventory
+    monkeypatch.setattr(inventory, '_inventory_worker', _stall_one_scan)
+    config = {'mount': str(tmp_path), 'datasets': []}
+    out = tmp_path / 'inventory.csv'
+    rows, report = inventory.resumable_inventory(config, None, {}, out,
+                                                timeout=2, skip_timeouts=True)
+    assert rows == [{'case_id': 'healthy'}]
+    assert report[0]['status'] == 'timeout'
+    assert report[0]['stage'] == 'ctools DICOM discovery: synthetic'
+    # Ordinary resume preserves exclusions; an explicit retry rechecks them.
+    (tmp_path / 'recovered').touch()
+    _, report = inventory.resumable_inventory(config, None, {}, out, resume=True, timeout=5)
+    assert report[0]['status'] == 'timeout'
+    _, report = inventory.resumable_inventory(config, None, {}, out, resume=True,
+                                              timeout=5, retry_timeouts=True)
+    assert report[0]['status'] == 'included'

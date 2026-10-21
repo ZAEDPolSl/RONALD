@@ -98,15 +98,19 @@ def build_inventory(config, read_mount=None, patient_map=None, completed=None, n
                     notify('current', f"Discovering {dataset['name']} after cached {scan}")
                     progress.set_postfix(included=included, skipped=skipped, refresh=False)
                     continue
-                notify('current', f"Checking {dataset['name']} / {scan}: {image}")
+                notify('scan', {'case_id': case_id, 'dataset': dataset['name'],
+                                'scan': scan, 'image': str(image)})
+                notify('current', f"Checking masks for {dataset['name']} / {scan}")
                 folder = masks / scan
                 required_masks = ('airways_final.nrrd', 'vessels_final.nrrd', 'lungs.nrrd')
                 for candidate in [folder, *[mount / extra / scan for extra in dataset.get('additional_masks', [])]]:
+                    notify('current', f'Checking mask files: {candidate}')
                     if all((candidate / name).is_file() for name in required_masks):
                         folder = candidate
                         break
                 paths = {'image': image, **{k: folder / filename for k, filename in
                          [('airways', 'airways_final.nrrd'), ('vessels', 'vessels_final.nrrd'), ('lungs', 'lungs.nrrd')]}}
+                notify('current', f'Checking required paths: {image}')
                 missing = [key for key, path in paths.items() if not path.exists()]
                 if missing:
                     report.append({'dataset': dataset['name'], 'scan': scan, 'status': 'missing', 'fields': missing})
@@ -114,6 +118,7 @@ def build_inventory(config, read_mount=None, patient_map=None, completed=None, n
                     progress.set_postfix(included=included, skipped=skipped, refresh=False)
                     continue
                 if dataset['kind'] in ('dicom', 'plcs4'):
+                    notify('current', f'ctools DICOM discovery: {image}')
                     selected = resolve_dicom_series(image)
                     if selected is None:
                         report.append({'dataset': dataset['name'], 'scan': scan, 'status': 'no_dicom_series', 'image': str(paths['image'])})
@@ -125,6 +130,7 @@ def build_inventory(config, read_mount=None, patient_map=None, completed=None, n
                     paths['image'] = image
                 else:
                     series_uid = ''
+                notify('current', f'Checking optional masks: {folder}')
                 for key, filename in [('mediastinum', 'mediastinum.nrrd'), ('nodules', 'region_grow.nrrd')]:
                     path = folder / filename
                     if path.is_file() and not (key == 'nodules' and dataset['key'] == 'luna16'):
@@ -160,7 +166,7 @@ def _inventory_worker(connection, config, read_mount, overrides, completed):
         connection.close()
 
 
-def resumable_inventory(config, read_mount, overrides, out, resume=False, timeout=120):
+def resumable_inventory(config, read_mount, overrides, out, resume=False, timeout=120, skip_timeouts=False, retry_timeouts=False):
     """Bound stalled filesystem/native-library calls in a disposable child process."""
     from .preparation_state import atomic_json
     import fcntl
@@ -182,43 +188,64 @@ def resumable_inventory(config, read_mount, overrides, out, resume=False, timeou
             atomic_json(settings, identity)
         completed = {p.stem: json.loads(p.read_text()) for p in state_dir.glob('case-*.json')}
         completed = {entry['case_id']: entry for entry in completed.values()}
-        ctx = multiprocessing.get_context('spawn')
-        receiver, sender = ctx.Pipe(duplex=False)
-        worker = ctx.Process(target=_inventory_worker,
-                             args=(sender, config, read_mount, overrides, completed), daemon=True)
-        current = 'Starting inventory worker'
-        worker.start()
-        sender.close()
-        try:
-            while True:
-                if not receiver.poll(timeout):
-                    raise TimeoutError(f'Inventory stalled for {timeout:g}s: {current}. '
-                                       f'Completed checks saved in {state_dir}; retry with --resume.')
-                try:
-                    kind, data = receiver.recv()
-                except EOFError as exc:
-                    raise RuntimeError(f'Inventory worker exited unexpectedly: {current}') from exc
-                if kind == 'current':
-                    current = data
-                    atomic_json(state_dir / 'current.json', {'stage': current})
-                    LOG.info('%s', current)
-                elif kind == 'completed':
-                    atomic_json(state_dir / ('case-' + data['case_id'] + '.json'), data)
-                    current = 'Discovering next scan after ' + data['case_id']
-                    atomic_json(state_dir / 'current.json', {'stage': current})
-                elif kind == 'error':
-                    raise RuntimeError(data)
-                elif kind == 'done':
-                    atomic_json(state_dir / 'current.json', {'stage': 'complete'})
-                    return data
-        finally:
-            if worker.is_alive():
-                worker.terminate()
-            worker.join(timeout=2)
-            if worker.is_alive():
-                worker.kill()
+        if retry_timeouts:
+            for key, entry in list(completed.items()):
+                if entry['report']['status'] == 'timeout':
+                    del completed[key]
+        while True:
+            ctx = multiprocessing.get_context('spawn')
+            receiver, sender = ctx.Pipe(duplex=False)
+            worker = ctx.Process(target=_inventory_worker,
+                                 args=(sender, config, read_mount, overrides, completed), daemon=True)
+            current = 'Starting inventory worker'
+            active_scan = None
+            worker.start()
+            sender.close()
+            try:
+                while True:
+                    if not receiver.poll(timeout):
+                        if skip_timeouts and active_scan is not None:
+                            entry = {'case_id': active_scan['case_id'], 'row': None,
+                                     'report': dict(active_scan, status='timeout', stage=current,
+                                                    timeout_seconds=timeout)}
+                            atomic_json(state_dir / ('case-' + entry['case_id'] + '.json'), entry)
+                            completed[entry['case_id']] = entry
+                            LOG.warning('Deferring timed-out scan: %s', current)
+                            break
+                        raise TimeoutError(f'Inventory stalled for {timeout:g}s: {current}. '
+                                           f'Completed checks saved in {state_dir}; retry with --resume.')
+                    try:
+                        kind, data = receiver.recv()
+                    except EOFError as exc:
+                        raise RuntimeError(f'Inventory worker exited unexpectedly: {current}') from exc
+                    if kind == 'scan':
+                        active_scan = data
+                    elif kind == 'current':
+                        current = data
+                        if current.startswith(('Discovering ', 'Checking roots /')):
+                            active_scan = None
+                        atomic_json(state_dir / 'current.json', {'stage': current, 'scan': active_scan})
+                        LOG.info('%s', current)
+                    elif kind == 'completed':
+                        completed[data['case_id']] = data
+                        active_scan = None
+                        atomic_json(state_dir / ('case-' + data['case_id'] + '.json'), data)
+                        current = 'Discovering next scan after ' + data['case_id']
+                        atomic_json(state_dir / 'current.json', {'stage': current, 'scan': active_scan})
+                    elif kind == 'error':
+                        raise RuntimeError(data)
+                    elif kind == 'done':
+                        atomic_json(state_dir / 'current.json', {'stage': 'complete'})
+                        return data
+            finally:
+                worker.join(timeout=0.5)
+                if worker.is_alive():
+                    worker.terminate()
                 worker.join(timeout=2)
-            receiver.close()
+                if worker.is_alive():
+                    worker.kill()
+                    worker.join(timeout=2)
+                receiver.close()
 
 
 def main():
@@ -229,6 +256,10 @@ def main():
     p.add_argument('--patient-map', help='Optional CSV with case_id,patient_id for verified cross-cohort linkage')
     p.add_argument('--resume', action='store_true', help='Reuse completed inventory checks')
     p.add_argument('--timeout-seconds', type=float, default=120, help='Stop after this long without progress (default: 120)')
+    p.add_argument('--skip-timeouts', action='store_true',
+                   help='Audit and defer timed-out scans, then continue with remaining scans')
+    p.add_argument('--retry-timeouts', action='store_true',
+                   help='Recheck scans previously deferred for timeout')
     args = p.parse_args()
     if not 0 < args.timeout_seconds < float('inf'):
         p.error('--timeout-seconds must be positive and finite')
@@ -245,7 +276,7 @@ def main():
                     raise ValueError('Empty/duplicate patient-map entry')
                 overrides[row['case_id']] = row['patient_id']
     rows, report = resumable_inventory(config, args.read_mount, overrides, out,
-                                       args.resume, args.timeout_seconds)
+                                       args.resume, args.timeout_seconds, args.skip_timeouts, args.retry_timeouts)
     out.parent.mkdir(parents=True, exist_ok=True)
     temporary = out.with_name(out.name + '.tmp')
     with temporary.open('w', newline='') as f:

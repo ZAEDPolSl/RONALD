@@ -180,3 +180,15 @@ the latest stage. Increase the timeout for a slow but working server, or resolve
 the reported storage/path issue and resume. Discovery must traverse folders again,
 but completed scans do not repeat mask or DICOM checks. Dataset bars count scans
 as they are discovered, so their total is initially unknown.
+
+If the same scan repeatedly times out, add `--skip-timeouts` to the inventory
+command. This terminates the stalled worker, checkpoints the scan as `timeout`,
+and restarts discovery using completed checks. The CSV excludes deferred scans;
+the audit and per-scan checkpoints retain their identity and failed stage.
+Root checks and directory-enumeration stalls still stop the run because they
+cannot safely be attributed to one scan.
+
+Ordinary resume retains timeout exclusions. To retry them after addressing the
+storage/DICOM issue, run the same command with `--resume --retry-timeouts` and,
+if needed, a larger `--timeout-seconds`. Finish retries before preparing data;
+changing an inventory already used by a preparation cache requires a new cache.
