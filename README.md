@@ -78,4 +78,4 @@ for usage, algorithms, diagnostics, and validation.
 
 If you use this work, please cite:
 
-> Mrukwa A, Polańska A, et al. Can Proper Vessel Segmentation Improve Early-Stage Lung Cancer Detection? Poster DATA-005, European Molecular Imaging Meeting (EMIM 2026), Ljubljana, Slovenia, 2026.
+> Mrukwa A, Socha M, Suwalska A, et al. Can unsupervised methods outperform supervised deep learning when ground truth is sparse? A case study of bronchovascular bundle segmentation in low-dose CT. arXiv [Preprint]. 2026. arXiv:2608.16855. doi:[10.48550/arXiv.2608.16855](https://doi.org/10.48550/arXiv.2608.16855).
