@@ -188,3 +188,16 @@ def test_defer_stalled_scan_and_retry(tmp_path, monkeypatch):
     _, report = inventory.resumable_inventory(config, None, {}, out, resume=True,
                                               timeout=5, retry_timeouts=True)
     assert report[0]['status'] == 'included'
+
+
+def test_inventory_local_state_directory(tmp_path, monkeypatch):
+    import ronald.training.inventory as inventory
+    monkeypatch.setattr(inventory, '_inventory_worker', _stall_one_scan)
+    (tmp_path / 'recovered').touch()
+    local = tmp_path / 'local-state'
+    out = tmp_path / 'unavailable-output-parent' / 'inventory.csv'
+    config = {'mount': str(tmp_path), 'datasets': []}
+    inventory.resumable_inventory(config, None, {}, out, timeout=5, state_dir=local)
+    assert (local / 'case-blocked.json').exists()
+    assert not out.parent.exists()
+    inventory.resumable_inventory(config, None, {}, out, resume=True, timeout=5, state_dir=local)

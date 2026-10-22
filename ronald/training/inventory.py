@@ -166,11 +166,11 @@ def _inventory_worker(connection, config, read_mount, overrides, completed):
         connection.close()
 
 
-def resumable_inventory(config, read_mount, overrides, out, resume=False, timeout=120, skip_timeouts=False, retry_timeouts=False):
+def resumable_inventory(config, read_mount, overrides, out, resume=False, timeout=120, skip_timeouts=False, retry_timeouts=False, state_dir=None):
     """Bound stalled filesystem/native-library calls in a disposable child process."""
     from .preparation_state import atomic_json
     import fcntl
-    state_dir = out.with_suffix('.inventory-state')
+    state_dir = Path(state_dir) if state_dir else out.with_suffix('.inventory-state')
     state_dir.mkdir(parents=True, exist_ok=True)
     with (state_dir / 'lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -204,10 +204,13 @@ def resumable_inventory(config, read_mount, overrides, out, resume=False, timeou
             try:
                 while True:
                     if not receiver.poll(timeout):
+                        LOG.warning('Inventory timeout after %gs: %s (worker PID %s)',
+                                    timeout, current, worker.pid)
                         if skip_timeouts and active_scan is not None:
                             entry = {'case_id': active_scan['case_id'], 'row': None,
                                      'report': dict(active_scan, status='timeout', stage=current,
                                                     timeout_seconds=timeout)}
+                            LOG.warning('Saving timeout exclusion to %s', state_dir)
                             atomic_json(state_dir / ('case-' + entry['case_id'] + '.json'), entry)
                             completed[entry['case_id']] = entry
                             LOG.warning('Deferring timed-out scan: %s', current)
@@ -245,6 +248,11 @@ def resumable_inventory(config, read_mount, overrides, out, resume=False, timeou
                 if worker.is_alive():
                     worker.kill()
                     worker.join(timeout=2)
+                if worker.is_alive():
+                    LOG.error('Worker PID %s remains alive after SIGKILL; possible blocked kernel I/O. '
+                              'Stop this run and check the storage mount before restarting.', worker.pid)
+                    # Do not accumulate blocked workers by restarting discovery.
+                    raise RuntimeError('Inventory worker could not be stopped; inspect storage/process state')
                 receiver.close()
 
 
@@ -260,6 +268,7 @@ def main():
                    help='Audit and defer timed-out scans, then continue with remaining scans')
     p.add_argument('--retry-timeouts', action='store_true',
                    help='Recheck scans previously deferred for timeout')
+    p.add_argument('--state-dir', help='Checkpoint directory; use local disk to isolate progress writes from NAS stalls')
     args = p.parse_args()
     if not 0 < args.timeout_seconds < float('inf'):
         p.error('--timeout-seconds must be positive and finite')
@@ -276,7 +285,7 @@ def main():
                     raise ValueError('Empty/duplicate patient-map entry')
                 overrides[row['case_id']] = row['patient_id']
     rows, report = resumable_inventory(config, args.read_mount, overrides, out,
-                                       args.resume, args.timeout_seconds, args.skip_timeouts, args.retry_timeouts)
+                                       args.resume, args.timeout_seconds, args.skip_timeouts, args.retry_timeouts, args.state_dir)
     out.parent.mkdir(parents=True, exist_ok=True)
     temporary = out.with_name(out.name + '.tmp')
     with temporary.open('w', newline='') as f:

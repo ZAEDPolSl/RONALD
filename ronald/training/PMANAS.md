@@ -192,3 +192,29 @@ Ordinary resume retains timeout exclusions. To retry them after addressing the
 storage/DICOM issue, run the same command with `--resume --retry-timeouts` and,
 if needed, a larger `--timeout-seconds`. Finish retries before preparing data;
 changing an inventory already used by a preparation cache requires a new cache.
+
+### Keep inventory checkpoints on local disk
+
+The default checkpoint location is beside the output CSV. If that is a network
+mount, a blocked checkpoint write can also block the parent timeout handler.
+Use `--state-dir` on a confirmed local filesystem. To preserve an existing run,
+stop it first, then copy its checkpoint directory into a new local location:
+
+```bash
+export WORK=/mnt/pmanas/Ania/bronco-pretrain/ronald-unet
+export STATE=/tmp/ronald-unet-inventory-state
+# First migration only; destination must not already exist.
+test ! -e "$STATE" && cp -a "$WORK/inventory-ctools.inventory-state" "$STATE"
+
+python -m ronald.training.inventory \
+  --config configs/training/pmanas.json \
+  --output "$WORK/inventory-ctools.csv" \
+  --state-dir "$STATE" --resume --skip-timeouts --timeout-seconds 120
+```
+
+Use the same local directory for subsequent resumes; do not copy the old NAS
+checkpoint over newer local state. /tmp may be cleared on reboot or container
+replacement: use a persistent local disk if available and back up state after
+the run. If copying itself hangs, the network storage must recover before old
+checkpoints can be recovered. Final CSV/audit publication still writes to the
+configured output filesystem and can block if that mount is unavailable.
