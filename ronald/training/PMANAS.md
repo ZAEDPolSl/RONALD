@@ -218,3 +218,14 @@ replacement: use a persistent local disk if available and back up state after
 the run. If copying itself hangs, the network storage must recover before old
 checkpoints can be recovered. Final CSV/audit publication still writes to the
 configured output filesystem and can block if that mount is unavailable.
+
+### Recover additional scans before preparation
+
+Use `--resume --retry-timeouts --retry-missing --skip-timeouts --timeout-seconds 1800`
+to retry slow DICOM discovery and recheck previously missing inputs. Keep the same
+`--state-dir` if one was used. Included scans remain cached; only exclusions of
+the requested types are rechecked. A longer timeout may recover slow scans but
+does not guarantee success. Missing-mask retries only add cases if required files
+have become available; absent airway/vessel labels are not treated as background.
+Do this before preparing a cache. If preparation already used this inventory,
+preserve the old inventory first and use a new cache for the expanded dataset.

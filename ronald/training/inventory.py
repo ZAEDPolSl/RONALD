@@ -166,7 +166,7 @@ def _inventory_worker(connection, config, read_mount, overrides, completed):
         connection.close()
 
 
-def resumable_inventory(config, read_mount, overrides, out, resume=False, timeout=120, skip_timeouts=False, retry_timeouts=False, state_dir=None):
+def resumable_inventory(config, read_mount, overrides, out, resume=False, timeout=120, skip_timeouts=False, retry_timeouts=False, state_dir=None, retry_missing=False):
     """Bound stalled filesystem/native-library calls in a disposable child process."""
     from .preparation_state import atomic_json
     import fcntl
@@ -188,10 +188,13 @@ def resumable_inventory(config, read_mount, overrides, out, resume=False, timeou
             atomic_json(settings, identity)
         completed = {p.stem: json.loads(p.read_text()) for p in state_dir.glob('case-*.json')}
         completed = {entry['case_id']: entry for entry in completed.values()}
+        retry_statuses = set()
         if retry_timeouts:
-            for key, entry in list(completed.items()):
-                if entry['report']['status'] == 'timeout':
-                    del completed[key]
+            retry_statuses.add('timeout')
+        if retry_missing:
+            retry_statuses.add('missing')
+        completed = {key: entry for key, entry in completed.items()
+                     if entry['report']['status'] not in retry_statuses}
         while True:
             ctx = multiprocessing.get_context('spawn')
             receiver, sender = ctx.Pipe(duplex=False)
@@ -268,6 +271,8 @@ def main():
                    help='Audit and defer timed-out scans, then continue with remaining scans')
     p.add_argument('--retry-timeouts', action='store_true',
                    help='Recheck scans previously deferred for timeout')
+    p.add_argument('--retry-missing', action='store_true',
+                   help='Recheck excluded scans for newly available required masks or images')
     p.add_argument('--state-dir', help='Checkpoint directory; use local disk to isolate progress writes from NAS stalls')
     args = p.parse_args()
     if not 0 < args.timeout_seconds < float('inf'):
@@ -285,7 +290,7 @@ def main():
                     raise ValueError('Empty/duplicate patient-map entry')
                 overrides[row['case_id']] = row['patient_id']
     rows, report = resumable_inventory(config, args.read_mount, overrides, out,
-                                       args.resume, args.timeout_seconds, args.skip_timeouts, args.retry_timeouts, args.state_dir)
+                                       args.resume, args.timeout_seconds, args.skip_timeouts, args.retry_timeouts, args.state_dir, args.retry_missing)
     out.parent.mkdir(parents=True, exist_ok=True)
     temporary = out.with_name(out.name + '.tmp')
     with temporary.open('w', newline='') as f:

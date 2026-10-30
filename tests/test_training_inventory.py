@@ -201,3 +201,28 @@ def test_inventory_local_state_directory(tmp_path, monkeypatch):
     assert (local / 'case-blocked.json').exists()
     assert not out.parent.exists()
     inventory.resumable_inventory(config, None, {}, out, resume=True, timeout=5, state_dir=local)
+
+
+def test_retry_missing_recovers_new_masks(tmp_path):
+    from ronald.training.inventory import resumable_inventory
+    (tmp_path / 'raw').mkdir()
+    for scan in ['ready', 'later']:
+        (tmp_path / 'raw' / (scan + '.nrrd')).touch()
+        folder = tmp_path / 'masks' / scan
+        folder.mkdir(parents=True)
+        for name in ['lungs.nrrd', 'vessels_final.nrrd']:
+            (folder / name).touch()
+    (tmp_path / 'masks/ready/airways_final.nrrd').touch()
+    config = {'mount': str(tmp_path), 'datasets': [
+        dict(name='test', key='test', raw='raw', masks='masks',
+             kind='volume', pattern='*.nrrd', identity_group='test')]}
+    out = tmp_path / 'inventory.csv'
+    rows, report = resumable_inventory(config, None, {}, out, timeout=30)
+    assert len(rows) == 1
+    (tmp_path / 'masks/later/airways_final.nrrd').touch()
+    rows, _ = resumable_inventory(config, None, {}, out, resume=True, timeout=30)
+    assert len(rows) == 1
+    rows, report = resumable_inventory(config, None, {}, out, resume=True,
+                                       timeout=30, retry_missing=True)
+    assert len(rows) == 2
+    assert all(entry['status'] == 'included' for entry in report)
