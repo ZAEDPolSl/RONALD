@@ -86,6 +86,23 @@ def preparation_lock(out):
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
+def output_mismatches(folder, outputs):
+    """Read-only metadata diagnostics; timestamp differences do not prove corruption."""
+    issues = []
+    for name, expected in outputs.items():
+        path = folder / name
+        try:
+            actual = file_stat(path)
+        except FileNotFoundError:
+            actual = None
+        if actual != expected:
+            reason = ('missing' if actual is None else
+                      'size_changed' if actual['size'] != expected['size'] else
+                      'timestamp_only')
+            issues.append(dict(file=name, reason=reason, expected=expected, actual=actual))
+    return issues
+
+
 class PreparationState:
     def __init__(self, out, args):
         self.out = out
@@ -124,10 +141,13 @@ class PreparationState:
         saved = json.loads(marker.read_text())
         if saved['preparation_token'] != self.token or saved['sources'] != sources:
             raise ValueError(f'{case_id}: completed scan inputs or settings changed; use a new cache')
-        for name, expected in saved['outputs'].items():
-            if not (folder / name).is_file() or file_stat(folder / name) != expected:
-                raise ValueError(f'{case_id}: completed cache file changed or missing: {name}; '
-                                 'move this scan directory aside to rebuild it with --resume')
+        issues = output_mismatches(folder, saved['outputs'])
+        if issues:
+            raise ValueError(f'{case_id}: completed cache file changed or missing: '
+                             f'{json.dumps(issues)}; inspect before rebuilding. '
+                             'Timestamp-only differences do not establish corruption. '
+                             'Use python -m ronald.training.check_cache --cache '
+                             f'{self.out} --case-id {case_id}')
         return saved
 
     def staging(self, case_id):

@@ -180,3 +180,18 @@ def test_completion_survives_interruption_before_aggregate_audit(inputs, monkeyp
     args.resume = True
     prep.prepare(args)
     assert len(json.loads((out / 'audit.json').read_text())) == 3
+
+
+def test_output_metadata_diagnostics(tmp_path):
+    import os
+    from ronald.training.preparation_state import file_stat, output_mismatches
+    path = tmp_path / 'image.npy'
+    path.write_bytes(b'example')
+    expected = {'image.npy': file_stat(path)}
+    assert output_mismatches(tmp_path, expected) == []
+    os.utime(path, ns=(path.stat().st_atime_ns, expected['image.npy']['mtime_ns'] + 1000000000))
+    assert output_mismatches(tmp_path, expected)[0]['reason'] == 'timestamp_only'
+    path.write_bytes(b'truncated')
+    assert output_mismatches(tmp_path, expected)[0]['reason'] == 'size_changed'
+    path.unlink()
+    assert output_mismatches(tmp_path, expected)[0]['reason'] == 'missing'
