@@ -274,6 +274,8 @@ def main():
     p.add_argument('--inventory', required=True)
     p.add_argument('--output', required=True)
     p.add_argument('--resume', action='store_true', help='Reuse completed scans with unchanged inputs/settings')
+    p.add_argument('--accept-cache-timestamp-changes', action='store_true',
+                   help='Validate and audit timestamp-only NPY/NPZ changes without rebuilding')
     p.add_argument('--adopt-legacy-cache', action='store_true',
                    help='With --resume, assert that old unmarked cache used the same original inputs/settings')
     p.add_argument('--luna-annotations')

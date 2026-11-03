@@ -78,3 +78,10 @@ tensorboard --logdir "$THREE/run-01/tensorboard" --port 6006
 Existing disk logs, checkpoints and visualizations remain enabled. Select models
 using validation only; keep test protected until analysis/model choices are fixed.
 Moltest 2 and PLCS4 are excluded from all three splits.
+
+For diagnosed timestamp-only cache changes, add
+`--accept-cache-timestamp-changes` to the preparation resume command. This verifies
+NPZ CRC and index bounds or NPY shape/dtype/value ranges, records previous metadata
+in complete.json, and stores a SHA-256 baseline. Missing/size-changed files still
+fail. Old completion records have no content hashes, so structural validation
+cannot prove original content identity. Other file types require investigation.

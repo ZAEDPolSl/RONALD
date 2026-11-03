@@ -33,7 +33,7 @@ def sha256_file(path):
 
 
 def preparation_identity(args):
-    settings = {k: v for k, v in vars(args).items() if k not in ('output', 'resume', 'adopt_legacy_cache')}
+    settings = {k: v for k, v in vars(args).items() if k not in ('output', 'resume', 'adopt_legacy_cache', 'accept_cache_timestamp_changes')}
     files = {}
     for key in ('inventory', 'luna_annotations', 'luna_candidates'):
         if settings.get(key):
@@ -106,6 +106,7 @@ def output_mismatches(folder, outputs):
 class PreparationState:
     def __init__(self, out, args):
         self.out = out
+        self.accept_timestamps = getattr(args, 'accept_cache_timestamp_changes', False)
         self.identity = preparation_identity(args)
         self.token = hashlib.sha256(json.dumps(self.identity, sort_keys=True).encode()).hexdigest()
         state_path = out / 'prepare_state.json'
@@ -142,6 +143,49 @@ class PreparationState:
         if saved['preparation_token'] != self.token or saved['sources'] != sources:
             raise ValueError(f'{case_id}: completed scan inputs or settings changed; use a new cache')
         issues = output_mismatches(folder, saved['outputs'])
+        if issues and self.accept_timestamps and all(i['reason'] == 'timestamp_only' for i in issues):
+            # Legacy markers have no content hashes. Validate structure, retain the
+            # old metadata in an audit record, and establish a content baseline.
+            import logging
+            shape = tuple(saved['audit']['crop_shape_zyx'])
+            hashes = {}
+            for issue in issues:
+                path = folder / issue['file']
+                before = file_stat(path)
+                if path.suffix == '.npz':
+                    from zipfile import ZipFile
+                    with ZipFile(path) as archive:
+                        if archive.testzip() is not None:
+                            raise ValueError(f'{case_id}: invalid archive CRC: {path.name}')
+                    with np.load(path, allow_pickle=False) as pools:
+                        for key in ('airway', 'vessel', 'nodule'):
+                            a = pools[key]
+                            if a.ndim != 1 or a.dtype.kind not in 'iu' or np.any(a < 0) or np.any(a >= np.prod(shape)):
+                                raise ValueError(f'{case_id}: invalid sampling indices')
+                elif path.suffix == '.npy':
+                    a = np.load(path, mmap_mode='r', allow_pickle=False)
+                    dtype = np.float16 if path.name == 'image.npy' else np.uint8
+                    if a.shape != shape or a.dtype != dtype:
+                        raise ValueError(f'{case_id}: invalid cached array shape/dtype')
+                    for slab in a:
+                        valid = (np.isfinite(slab).all() and np.all((slab >= 0) & (slab <= 1))) if path.name == 'image.npy' else np.isin(slab, (0, 1, 2) if path.name == 'label.npy' else (0, 1)).all()
+                        if not valid:
+                            raise ValueError(f'{case_id}: invalid cached array values')
+                else:
+                    raise ValueError(f'{case_id}: automatic timestamp acceptance unsupported for {path.name}')
+                hashes[path.name] = sha256_file(path)
+                baseline = saved.get('output_sha256', {}).get(path.name)
+                if baseline and hashes[path.name] != baseline:
+                    raise ValueError(f'{case_id}: cache content hash changed: {path.name}')
+                if file_stat(path) != before:
+                    raise ValueError(f'{case_id}: file changed during verification: {path.name}')
+            saved.setdefault('timestamp_acceptances', []).append(issues)
+            saved.setdefault('output_sha256', {}).update(hashes)
+            for issue in issues:
+                saved['outputs'][issue['file']] = issue['actual']
+            atomic_json(marker, saved)
+            logging.getLogger(__name__).warning('%s: accepted timestamp-only changes after structural checks: %s', case_id, list(hashes))
+            issues = []
         if issues:
             raise ValueError(f'{case_id}: completed cache file changed or missing: '
                              f'{json.dumps(issues)}; inspect before rebuilding. '

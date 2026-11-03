@@ -195,3 +195,29 @@ def test_output_metadata_diagnostics(tmp_path):
     assert output_mismatches(tmp_path, expected)[0]['reason'] == 'size_changed'
     path.unlink()
     assert output_mismatches(tmp_path, expected)[0]['reason'] == 'missing'
+
+
+def test_accept_timestamp_only_with_validation(inputs):
+    import os
+    args, _ = inputs
+    prep.prepare(args)
+    args.resume = True
+    out = Path(args.output)
+    path = out / 'c0/indices.npz'
+    original = path.read_bytes()
+    stat = path.stat()
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5000000))
+    with pytest.raises(ValueError, match='timestamp_only'):
+        prep.prepare(args)
+    args.accept_cache_timestamp_changes = True
+    prep.prepare(args)
+    assert path.read_bytes() == original
+    marker = json.loads((out / 'c0/complete.json').read_text())
+    assert marker['timestamp_acceptances'][0][0]['reason'] == 'timestamp_only'
+    assert 'indices.npz' in marker['output_sha256']
+    path.write_bytes(b'x' * len(original))
+    with pytest.raises(Exception):
+        prep.prepare(args)
+    path.unlink()
+    with pytest.raises(ValueError, match='missing'):
+        prep.prepare(args)
