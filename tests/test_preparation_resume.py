@@ -221,3 +221,23 @@ def test_accept_timestamp_only_with_validation(inputs):
     path.unlink()
     with pytest.raises(ValueError, match='missing'):
         prep.prepare(args)
+
+
+def test_timestamp_accepts_overlap_ignore_label_but_rejects_unknown_label(inputs):
+    import os
+    args, rows = inputs
+    # Generate legitimate 255 overlap through the actual preparation pipeline.
+    sitk.WriteImage(sitk.ReadImage(rows[0]['airways']), rows[0]['vessels'])
+    prep.prepare(args)
+    args.resume = True
+    args.accept_cache_timestamp_changes = True
+    path = Path(args.output) / 'c0/label.npy'
+    assert 255 in np.unique(np.load(path))
+    stat = path.stat()
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5000000))
+    prep.prepare(args)
+    arr = np.load(path)
+    arr.flat[0] = 3
+    np.save(path, arr)
+    with pytest.raises(ValueError, match='invalid cached array values in label.npy'):
+        prep.prepare(args)

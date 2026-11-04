@@ -168,9 +168,11 @@ class PreparationState:
                     if a.shape != shape or a.dtype != dtype:
                         raise ValueError(f'{case_id}: invalid cached array shape/dtype')
                     for slab in a:
-                        valid = (np.isfinite(slab).all() and np.all((slab >= 0) & (slab <= 1))) if path.name == 'image.npy' else np.isin(slab, (0, 1, 2) if path.name == 'label.npy' else (0, 1)).all()
+                        valid = (np.isfinite(slab).all() and np.all((slab >= 0) & (slab <= 1))) if path.name == 'image.npy' else np.isin(slab, (0, 1, 2, 255) if path.name == 'label.npy' else (0, 1)).all()
                         if not valid:
-                            raise ValueError(f'{case_id}: invalid cached array values')
+                            raise ValueError(f'{case_id}: invalid cached array values in {path.name}; '
+                                             f'slab_min={np.min(slab)}, slab_max={np.max(slab)}, '
+                                             f'nonfinite={np.count_nonzero(~np.isfinite(slab))}')
                 else:
                     raise ValueError(f'{case_id}: automatic timestamp acceptance unsupported for {path.name}')
                 hashes[path.name] = sha256_file(path)
