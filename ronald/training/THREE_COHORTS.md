@@ -85,3 +85,20 @@ NPZ CRC and index bounds or NPY shape/dtype/value ranges, records previous metad
 in complete.json, and stores a SHA-256 baseline. Missing/size-changed files still
 fail. Old completion records have no content hashes, so structural validation
 cannot prove original content identity. Other file types require investigation.
+
+If all scans completed but final splitting rejects an image_sha256 overlap, run:
+
+```bash
+python -m ronald.training.finalize_splits --cache "$THREE/cache" \
+  --accept-cache-timestamp-changes
+```
+
+This reads the original frozen inventory and completion records, checks cache
+metadata and groups linked patient IDs, image paths and native voxel hashes
+transitively. Test takes precedence over validation, then training. It preserves
+original records and writes manifest-grouped.json and split-repair-audit.json
+beside the cache. Use manifest-grouped.json for training and all subsequent
+resumes. No CT preprocessing is repeated. New split counts may differ from 70/15/15.
+Only use before training/model selection: this does not undo prior test exposure.
+Original source files are not re-read. Duplicate copies remain in one partition;
+report unique-image counts and do not treat copies as independent evaluation units.

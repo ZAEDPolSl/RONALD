@@ -241,3 +241,18 @@ def test_timestamp_accepts_overlap_ignore_label_but_rejects_unknown_label(inputs
     np.save(path, arr)
     with pytest.raises(ValueError, match='invalid cached array values in label.npy'):
         prep.prepare(args)
+
+
+def test_finalize_completed_cache_without_reading_ct(inputs, monkeypatch):
+    from ronald.training.finalize_splits import finalize
+    args, _ = inputs
+    prep.prepare(args)
+    def forbidden(*a, **kw):
+        raise AssertionError('Must not reread CT')
+    monkeypatch.setattr(prep, 'read_image', forbidden)
+    finalize(args.output)
+    out = Path(args.output)
+    original = json.loads((out / 'manifest.json').read_text())
+    grouped = json.loads((out / 'manifest-grouped.json').read_text())
+    assert original['splits'] == grouped['splits']
+    finalize(args.output)
