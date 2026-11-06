@@ -256,3 +256,19 @@ def test_finalize_completed_cache_without_reading_ct(inputs, monkeypatch):
     grouped = json.loads((out / 'manifest-grouped.json').read_text())
     assert original['splits'] == grouped['splits']
     finalize(args.output)
+
+
+def test_deduplicated_manifest_preserves_cached_files(inputs):
+    from ronald.training.finalize_splits import finalize
+    args, _ = inputs
+    prep.prepare(args)
+    out = Path(args.output)
+    finalize(out)
+    before = {str(p): p.read_bytes() for p in out.glob('c*/*') if p.is_file()}
+    original = (out / 'manifest-grouped.json').read_bytes()
+    finalize(out, deduplicate=True)
+    finalize(out, deduplicate=True)
+    assert original == (out / 'manifest-grouped.json').read_bytes()
+    assert all(Path(p).read_bytes() == data for p, data in before.items())
+    assert (out / 'manifest-deduplicated.json').exists()
+    assert (out / 'split-deduplication-audit.json').exists()

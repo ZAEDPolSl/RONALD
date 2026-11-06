@@ -45,7 +45,27 @@ def group_splits(cases):
     return splits, changes, duplicates
 
 
-def finalize(cache, accept_timestamps=False):
+def deduplicate_splits(splits):
+    """Keep lowest case_id per native voxel hash, after all identity links are grouped."""
+    result, removed = {}, []
+    for split, cases in splits.items():
+        retained = {}
+        for case in sorted(cases, key=lambda c: c['case_id']):
+            key = case['image_sha256']
+            if key in retained:
+                removed.append({'split': split, 'image_sha256': key,
+                                'retained_case_id': retained[key]['case_id'],
+                                'removed_case_id': case['case_id'],
+                                'retained_dataset': retained[key]['dataset'],
+                                'removed_dataset': case['dataset']})
+            else:
+                retained[key] = case
+        result[split] = list(retained.values())
+    validate_splits(result)
+    return result, removed
+
+
+def finalize(cache, accept_timestamps=False, deduplicate=False):
     cache = Path(cache).resolve()
     with preparation_lock(cache):
         saved = json.loads((cache / 'prepare_state.json').read_text())
@@ -73,32 +93,41 @@ def finalize(cache, accept_timestamps=False):
         if len({c['case_id'] for c in cases}) != len(cases):
             raise ValueError('Duplicate case IDs')
         splits, changes, groups = group_splits(cases)
+        removed = []
+        if deduplicate:
+            splits, removed = deduplicate_splits(splits)
         report = {'policy': 'transitive patient/image/hash groups; test > validation > training',
                   'changes': changes, 'linked_groups': groups,
                   'counts': {k: dict(Counter(c['dataset'] for c in v)) for k, v in splits.items()},
                   'unique_images': {k: len({c['image_sha256'] for c in v}) for k, v in splits.items()},
                   'completion_sha256': marker_hashes,
                   'limitations': 'Original sources not reread; uses completed cache provenance. Duplicate copies retained within one split; not independent observations.'}
+        if deduplicate:
+            report['deduplication'] = {'policy': 'lowest case_id per image_sha256 after transitive grouping', 'removed': removed}
+            report['limitations'] = 'Original sources not reread; native voxel hash identity only. Biological patient aliases remain unverified. Cached arrays are preserved.'
         manifest = {'version': 1, 'classes': {'0': 'background', '1': 'airway_with_wall', '2': 'vessel'},
                     'preprocessing': {'spacing_xyz': settings['spacing'], 'margin_mm': settings['margin_mm'], 'hu': settings['hu']},
                     'preparation': dict(settings, output=str(cache)), 'splits': splits,
                     'split_policy': report['policy']}
-        target = cache / 'manifest-grouped.json'
+        if deduplicate:
+            manifest['deduplication_policy'] = report['deduplication']['policy']
+        target = cache / ('manifest-deduplicated.json' if deduplicate else 'manifest-grouped.json')
         if target.exists() and json.loads(target.read_text()) != manifest:
             raise ValueError('Existing grouped manifest differs; preserve it and investigate')
-        atomic_json(cache / 'split-repair-audit.json', report)
+        atomic_json(cache / ('split-deduplication-audit.json' if deduplicate else 'split-repair-audit.json'), report)
         if not target.exists():
             atomic_json(target, manifest)
         print(json.dumps({'manifest': str(target), 'counts': report['counts'],
-                          'unique_images': report['unique_images'], 'moved_cases': len(changes)}, indent=2))
+                          'unique_images': report['unique_images'], 'moved_cases': len(changes), 'removed_duplicate_copies': len(removed)}, indent=2))
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--cache', required=True)
     p.add_argument('--accept-cache-timestamp-changes', action='store_true')
+    p.add_argument('--deduplicate', action='store_true', help='Write a separate manifest retaining one copy per native voxel hash')
     args = p.parse_args()
-    finalize(args.cache, args.accept_cache_timestamp_changes)
+    finalize(args.cache, args.accept_cache_timestamp_changes, args.deduplicate)
 
 
 if __name__ == '__main__':

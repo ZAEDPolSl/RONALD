@@ -102,3 +102,20 @@ resumes. No CT preprocessing is repeated. New split counts may differ from 70/15
 Only use before training/model selection: this does not undo prior test exposure.
 Original source files are not re-read. Duplicate copies remain in one partition;
 report unique-image counts and do not treat copies as independent evaluation units.
+
+To remove duplicate copies from every split without rebuilding or deleting arrays:
+
+```bash
+python -m ronald.training.finalize_splits --cache "$THREE/cache" \
+  --accept-cache-timestamp-changes --deduplicate
+```
+
+Use the resulting manifest-deduplicated.json for training and all resumes.
+The command groups identity links before deduplication, then retains the lowest
+case_id per native voxel hash within each split. This fixed rule does not use
+model results or imply that the chosen pseudo-mask is superior. Distinct scans of
+the same patient are retained in the same split. split-deduplication-audit.json
+records each retained/removed case, dataset and hash. Original manifests and all
+cached files remain intact. Repeat runs verify the existing manifest rather than
+replacing different splits. Do not resume a model trained with another manifest;
+start a fresh run directory for the deduplicated cohort.
