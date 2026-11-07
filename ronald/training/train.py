@@ -18,6 +18,7 @@ from torch.utils.tensorboard import SummaryWriter
 from .data import PatchDataset
 from .evaluation import evaluate
 from .losses import PseudoLabelLoss
+from .optimization import optimizer_update
 from .model import UNet3D
 from .prepare import validate_splits
 
@@ -174,17 +175,13 @@ def run(args):
             totals, count = {}, 0
             for batch in loader:
                 x, y, n, weight = [batch[k].to(device, non_blocking=True) for k in ('image', 'label', 'nodules', 'weight')]
-                optimizer.zero_grad(set_to_none=True)
-                with torch.autocast(device_type=device.type, enabled=config['amp'] and device.type == 'cuda'):
-                    logits = model(x)
-                loss, parts = criterion(logits, y, n, weight)
-                if not torch.isfinite(loss):
-                    raise FloatingPointError(f'Nonfinite loss epoch={epoch + 1} step={global_step}')
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config['gradient_clip'], error_if_nonfinite=True)
-                scaler.step(optimizer)
-                scaler.update()
+                def forward_loss():
+                    with torch.autocast(device_type=device.type, enabled=config['amp'] and device.type == 'cuda'):
+                        logits = model(x)
+                    return criterion(logits, y, n, weight)
+
+                loss, parts, grad_norm = optimizer_update(
+                    forward_loss, model, optimizer, scaler, config['gradient_clip'])
                 global_step += 1
                 batch_n = len(x)
                 count += batch_n
