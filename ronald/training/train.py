@@ -18,7 +18,7 @@ from torch.utils.tensorboard import SummaryWriter
 from .data import PatchDataset
 from .evaluation import evaluate
 from .losses import PseudoLabelLoss
-from .optimization import optimizer_update
+from .optimization import optimizer_update, finite_forward_loss
 from .model import UNet3D
 from .prepare import validate_splits
 
@@ -175,10 +175,21 @@ def run(args):
             totals, count = {}, 0
             for batch in loader:
                 x, y, n, weight = [batch[k].to(device, non_blocking=True) for k in ('image', 'label', 'nodules', 'weight')]
+                def record_forward_failure(details):
+                    diagnostic = out / 'forward_failure.pt'
+                    # Retain the first exact failing weights/batch for diagnosis.
+                    if not diagnostic.exists():
+                        torch.save({'model': model.state_dict(), 'batch': batch,
+                                    'epoch': epoch, 'global_step': global_step,
+                                    'details': details}, diagnostic)
+                    LOG.warning('Forward diagnostic epoch=%d step=%d path=%s',
+                                epoch + 1, global_step, diagnostic)
+
                 def forward_loss():
-                    with torch.autocast(device_type=device.type, enabled=config['amp'] and device.type == 'cuda'):
-                        logits = model(x)
-                    return criterion(logits, y, n, weight)
+                    return finite_forward_loss(
+                        model, criterion, x, y, n, weight,
+                        amp=config['amp'] and device.type == 'cuda',
+                        on_retry=record_forward_failure)
 
                 loss, parts, grad_norm = optimizer_update(
                     forward_loss, model, optimizer, scaler, config['gradient_clip'])

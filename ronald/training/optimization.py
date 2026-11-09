@@ -34,3 +34,31 @@ def optimizer_update(forward_loss, model, optimizer, scaler, gradient_clip, max_
         scaler.update()
         LOG.warning('AMP gradient overflow: scale %g -> %g; retrying same batch (%d/%d)',
                     old_scale, scaler.get_scale(), attempt + 1, max_retries)
+
+
+def finite_forward_loss(model, criterion, image, labels, nodules, weight, amp,
+                        on_retry=None):
+    """Retry an AMP forward/loss overflow in float32, never mask invalid data."""
+    with torch.autocast(device_type=image.device.type, enabled=amp):
+        logits = model(image)
+    loss, parts = criterion(logits, labels, nodules, weight)
+    if torch.isfinite(loss):
+        return loss, parts
+    details = {'amp': amp, 'logits_finite': bool(logits.isfinite().all()),
+               'parts': parts}
+    # Drop the bad graph before allocating the full precision graph.
+    del logits, loss
+    if not amp:
+        raise FloatingPointError(f'Nonfinite full precision loss: {details}')
+    if not image.isfinite().all() or not weight.isfinite().all():
+        raise FloatingPointError('Nonfinite training input or sample weight')
+    if on_retry is not None:
+        on_retry(details)
+    LOG.warning('Nonfinite AMP forward/loss; retrying same batch in float32: %s', details)
+    with torch.autocast(device_type=image.device.type, enabled=False):
+        logits = model(image.float())
+        loss, parts = criterion(logits, labels, nodules, weight)
+    if not torch.isfinite(loss):
+        raise FloatingPointError(f'Nonfinite loss persists in float32: {parts}')
+    LOG.warning('Float32 forward recovery succeeded: loss=%g', float(loss.detach()))
+    return loss, parts

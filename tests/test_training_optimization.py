@@ -46,3 +46,34 @@ def test_nonfinite_loss_is_fatal():
     with pytest.raises(FloatingPointError, match='Nonfinite loss'):
         optimizer_update(lambda: (model(torch.ones(1, 1)).sum()*float('nan'), {}),
                          model, optimizer, torch.amp.GradScaler('cpu'), 12)
+
+
+def test_forward_overflow_recovers_with_finite_gradient():
+    from ronald.training.optimization import finite_forward_loss
+    model = torch.nn.Linear(1, 1, bias=False)
+    with torch.no_grad():
+        model.weight.fill_(1e20)
+    # bfloat16 multiply overflows, whereas the float32 loss rescales first.
+    def criterion(z, *unused):
+        return (z.double().square().mean() / 1e40).float(), {}
+    class OverflowModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = model
+        def forward(self, x):
+            z = self.linear(x)
+            return z * 1e20 / 1e20 if torch.is_autocast_enabled('cpu') else z
+    diagnostics = []
+    loss, _ = finite_forward_loss(OverflowModel(), criterion, torch.ones(1, 1),
+                                 None, None, torch.ones(1), True, diagnostics.append)
+    loss.backward()
+    assert diagnostics and not diagnostics[0]['logits_finite']
+    assert loss.isfinite() and model.weight.grad.isfinite().all()
+
+
+def test_forward_retry_does_not_hide_persistent_nonfinite_loss():
+    from ronald.training.optimization import finite_forward_loss
+    model = torch.nn.Linear(1, 1)
+    with pytest.raises(FloatingPointError, match='persists in float32'):
+        finite_forward_loss(model, lambda z, *args: (z.sum()*float('nan'), {}),
+                            torch.ones(1, 1), None, None, torch.ones(1), True)
