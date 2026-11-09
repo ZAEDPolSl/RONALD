@@ -25,6 +25,13 @@ from .prepare import validate_splits
 LOG = logging.getLogger(__name__)
 
 
+def compatible_resume_config(saved, current, fp32_transition=False):
+    if fp32_transition:
+        return (saved.get('amp') is True and current.get('amp') is False
+                and {**saved, 'amp': False} == current)
+    return saved == current
+
+
 def validate_config(c):
     for key in ('epochs', 'patches_per_case', 'batch_size', 'validation_interval', 'visualization_interval',
                 'checkpoint_interval', 'sw_batch_size', 'patience'):
@@ -113,6 +120,13 @@ def run(args):
     root = manifest_path.parent
     config = json.loads(Path(args.config).read_text())
     validate_config(config)
+    fp32_transition = getattr(args, 'resume_fp32', False)
+    if fp32_transition and (not args.resume or config['amp']):
+        raise ValueError('--resume-fp32 requires --resume and amp=false config')
+    if not config['amp']:
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
+        torch.set_float32_matmul_precision('highest')
     seed_everything(config['seed'], config['deterministic'])
     device = torch.device(args.device)
     if device.type not in ('cuda', 'cpu'):
@@ -148,12 +162,18 @@ def run(args):
     start, best, bad_checks, global_step = 0, -float('inf'), 0, 0
     if args.resume:
         checkpoint = load_checkpoint(args.resume)
-        if checkpoint['config'] != config or checkpoint['manifest_sha256'] != manifest_hash:
+        if not compatible_resume_config(checkpoint['config'], config, fp32_transition) or checkpoint['manifest_sha256'] != manifest_hash:
             raise ValueError('Resume requires unchanged configuration and manifest')
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         scheduler.load_state_dict(checkpoint['scheduler'])
-        scaler.load_state_dict(checkpoint['scaler'])
+        if not fp32_transition:
+            scaler.load_state_dict(checkpoint['scaler'])
+        else:
+            LOG.info('Explicit AMP to FP32 transition; optimizer/scheduler retained, scaler disabled')
+            (out / 'precision-transition.json').write_text(json.dumps({
+                'source_checkpoint': str(Path(args.resume).resolve()),
+                'source_config': checkpoint['config'], 'target_config': config}, indent=2))
         restore_rng(checkpoint['rng'])
         start, best = checkpoint['epoch'] + 1, checkpoint['best']
         bad_checks, global_step = checkpoint['bad_checks'], checkpoint['global_step']
@@ -259,6 +279,7 @@ def main():
     group = p.add_mutually_exclusive_group()
     group.add_argument('--resume', help='Trusted checkpoint; resumes from next epoch')
     group.add_argument('--evaluate', help='Trusted checkpoint; no training')
+    p.add_argument('--resume-fp32', action='store_true', help='Allow only amp=true to false when resuming into a new output directory')
     p.add_argument('--split', choices=['validation', 'test'], default='test')
     args = p.parse_args()
     try:

@@ -77,3 +77,14 @@ def test_forward_retry_does_not_hide_persistent_nonfinite_loss():
     with pytest.raises(FloatingPointError, match='persists in float32'):
         finite_forward_loss(model, lambda z, *args: (z.sum()*float('nan'), {}),
                             torch.ones(1, 1), None, None, torch.ones(1), True)
+
+
+def test_precision_transition_only_allows_amp_to_fp32():
+    from ronald.training.train import compatible_resume_config
+    old = {'amp': True, 'learning_rate': .001}
+    new = {**old, 'amp': False}
+    assert compatible_resume_config(old, old)
+    assert not compatible_resume_config(old, new)
+    assert compatible_resume_config(old, new, True)
+    assert not compatible_resume_config(new, old, True)
+    assert not compatible_resume_config(old, {**new, 'learning_rate': .1}, True)
